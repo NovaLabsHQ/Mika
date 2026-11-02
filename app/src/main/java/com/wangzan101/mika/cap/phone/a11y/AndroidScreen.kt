@@ -104,7 +104,16 @@ class AndroidScreen(
     private val typing: (String?) -> TypingPacing = { TypingPacing.Instant },
     /** 设置里「别动这些 App」的包:从不挪回 Mika 的屏;冒到 Mika 屏上就送回用户的主屏(见 [returnIntruder])。 */
     private val leaveAlone: () -> Set<String> = { emptySet() },
+    /**
+     * 设置 › 隐私与数据 › 敏感 App 里挡着的包:从不挪到 Mika 的屏,开到主屏上就留在那里;冒到 Mika 屏上马上送回用户的主屏,
+     * 不等安静期。能不能打开、看、操作由外面一层 [com.wangzan101.mika.core.privacy.PrivacyScreen] 管。
+     */
+    private val blocked: (String) -> Boolean = { false },
 ) : ScreenPort {
+    /** 最近一次看到 Mika 屏最上面是隐私名单上的 App;实时画面据此不出图。 */
+    @Volatile var blockedOnTop: Boolean = false
+        private set
+
     /** 屏还没建时为 -1;只在确认屏已建好之后用。 */
     private val displayId get() = display.current?.displayId ?: -1
     private val opened get() = display.current != null
@@ -196,6 +205,33 @@ class AndroidScreen(
     }
 
     override suspend fun screenshotPng(): ByteArray? = withContext(Dispatchers.IO) { display.current?.latestFramePng() }
+
+    override suspend fun foregroundPackage(): String? = withContext(Dispatchers.IO) {
+        foregroundTaskPackage().also { blockedOnTop = it != null && blocked(it) }
+    }
+
+    override suspend fun mainScreenPackage(): String? = withContext(Dispatchers.IO) {
+        val task = runCatching { shell.topTaskId(Display.DEFAULT_DISPLAY) }.getOrDefault(-1)
+        if (task < 0) null else runCatching { shell.packageOfTask(task) }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    /** 把 Mika 屏最上面的 [packageName] 任务送回用户的主屏(隐私名单上的 App);最上面不是它、或挪不动为 false。 */
+    override suspend fun sendToUserScreen(packageName: String): Boolean = withContext(Dispatchers.IO) {
+        if (!opened) return@withContext false
+        val task = runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
+        if (task < 0 || runCatching { shell.packageOfTask(task) }.getOrNull() != packageName) return@withContext false
+        ownMoveAt = SystemClock.uptimeMillis()
+        if (!runCatching { shell.moveTask(task, Display.DEFAULT_DISPLAY) }.getOrDefault(false)) {
+            Log.w(TAG, "could not send blocked $packageName (task $task) to the main screen")
+            return@withContext false
+        }
+        guard.forget(task)
+        adopted -= task
+        blockedOnTop = false
+        if (_target.value?.taskId == task) _target.value = null
+        Log.i(TAG, "sent blocked $packageName (task $task) to the main screen")
+        true
+    }
 
     /**
      * 认屏上文字。自绘界面几乎没有无障碍事件,事件安静了画面可能还在过渡:先等画面停稳再认;认的过程中换了整页就按新的一页再认
@@ -823,6 +859,10 @@ class AndroidScreen(
     override suspend fun openLink(action: String?, uri: String?, packageName: String?): ActionResult = acting {
         val id = display.get().displayId
         val expected = packageName ?: settingsPackage.takeIf { action != null }
+        // 默认由隐私名单上的 App 打开的链接:不发出
+        linkHandler(action, uri, packageName)?.takeIf(blocked)?.let {
+            return@acting ActionResult.Failed(PRIVACY_BLOCKED, "Blocked app: ${appLabel(it) ?: it} ($it).")
+        }
         if (checkOtherTasks && expected != null && !reserve(expected)) return@acting IN_USE_BY_OTHER
         val before = ScreenReader.topPackage(windows())
         val beforeTree = treeHash()
@@ -862,6 +902,15 @@ class AndroidScreen(
         return if (r is ActionResult.Ok) r.copy(opened = spill.opened, chooser = r.chooser ?: spill.chooser) else r
     }
 
+    /** 系统此刻会把这个链接交给哪个 App(有默认的才算);问不到、要用户选为 null。 */
+    private fun linkHandler(action: String?, uri: String?, packageName: String?): String? {
+        if (packageName != null) return packageName
+        return runCatching {
+            val intent = android.content.Intent(action ?: android.content.Intent.ACTION_VIEW, uri?.let(android.net.Uri::parse))
+            a11y.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+        }.getOrNull()?.takeIf { it !in systemPickers && it != "android" }
+    }
+
     private fun hintLinkElsewhere(top: String?, expected: String) =
         "The link opened, but the screen shows ${top ?: "no app yet"} instead of $expected: a system chooser or a redirect page may have taken it. Observe before acting."
 
@@ -898,6 +947,8 @@ class AndroidScreen(
         val handler = SystemIntents.choose(handlers, default)
             ?: return@acting SystemActionResult(ActionResult.Failed(SystemActionResult.NOT_SUPPORTED))
         val pkg = handler.packageName
+        // 接手的是隐私名单上的 App:不交给它
+        if (blocked(pkg)) return@acting SystemActionResult(ActionResult.Failed(PRIVACY_BLOCKED, "Blocked app: ${appLabel(pkg) ?: pkg} ($pkg)."), pkg)
         intent.component = android.content.ComponentName(pkg, handler.className)
         if (checkOtherTasks && !action.silent && !reserve(pkg)) return@acting SystemActionResult(IN_USE_BY_OTHER, pkg)
         val alarms = a11y.getSystemService(AlarmManager::class.java)
@@ -1213,6 +1264,11 @@ class AndroidScreen(
         for (v in verdicts.map(ledger::limit)) {
             val a = v.arrival
             val pkg = a.packageName ?: continue
+            // 隐私名单上的:不挪、不读,留在用户的主屏上
+            if (blocked(pkg)) {
+                last = Spill(OpenedElsewhere(pkg, appLabel(pkg), pulledBack = false, blocked = true), null)
+                continue
+            }
             last = when (v) {
                 // 系统问打开哪一个的先按选择框处理;要用户亲手处理的弹窗(登录验证、账号确认一类)留在主屏,不挪到 Mika 的屏上
                 is MainScreenSpill.PullBack -> leaveForUser(a, pkg, w) ?: leavePopup(a, pkg) ?: pullBack(a, pkg) ?: last
@@ -1249,9 +1305,12 @@ class AndroidScreen(
         val task = runCatching { shell.topTaskId(here) }.getOrDefault(-1)
         if (task < 0) return@withContext null
         val pkg = runCatching { shell.packageOfTask(task) }.getOrNull()
+        val isBlocked = pkg != null && blocked(pkg)
+        blockedOnTop = isBlocked
         val allowed = systemPickers + notSpills + setOfNotNull(settingsPackage, chooserPackage, PLAY_SERVICES)
         val target = _target.value
-        val bad = guard.intruder(
+        // 隐私名单上的:不论是谁开的、动作做没做完,马上送走
+        val bad = isBlocked || guard.intruder(
             SystemClock.uptimeMillis(), AgentScreenGuard.Top(task, pkg), target?.taskId ?: -1, targetPackage,
             adopted.toSet(), allowed, leaveAlone(),
         )
@@ -1263,6 +1322,8 @@ class AndroidScreen(
         }
         guard.forget(task)
         adopted -= task
+        if (isBlocked) blockedOnTop = false
+        if (isBlocked && target?.taskId == task) _target.value = null
         returned += pkg
         // 自己冒到 Mika 屏上的:这次运行里它再开到主屏上也当作自己开的,不挪
         ledger.selfLaunched(pkg)
@@ -1341,6 +1402,7 @@ class AndroidScreen(
 
     /** 把开到主屏上的任务挪到 Mika 的屏(只挪,不替它重新打开),等它到最上面;挪不动为 null。 */
     private suspend fun pullBack(a: MainScreenSpill.Arrival, pkg: String, byUser: Boolean = false): Spill? {
+        if (blocked(pkg)) return Spill(OpenedElsewhere(pkg, appLabel(pkg), pulledBack = false, byUser = byUser, blocked = true), null)
         // 先记下再挪:挪过来的那一刻 [returnIntruder] 不把它当成不该在这里的
         val known = a.taskId in adopted
         adopted += a.taskId
@@ -1497,6 +1559,8 @@ class AndroidScreen(
             o.byUser -> "$name needed the user; they handled it on their own screen and tapped continue. It is now in front on Mika's screen. Observe before acting."
             o.needsUser && o.onUserScreen -> "It was $name: a popup on the user's screen that needs them (a sign-in, verification or confirmation step). " +
                 "It was left there on purpose; do not repeat the action. Call hand_to_user so they can finish it, then observe before acting."
+            o.blocked -> "It was $name: it is on the user's privacy list of sensitive apps, so it was left on the user's own screen and Mika does not read or operate it. " +
+                "Do not try to open or use it, and do not repeat the action; if the task needs it, tell the user it is on their privacy list (Settings › Privacy & data › Sensitive apps)."
             o.onItsOwn -> "It was $name: it opened on the user's screen on its own (not because of Mika's action) and was left there. " +
                 "This is not the user taking over: do not call hand_to_user for it. The previous action may not have done anything: observe Mika's screen and carry on with the task."
             o.pulledBack -> "It was $name: it came up on the user's screen and was moved to Mika's screen, where it is now in front.$copy " +
@@ -1904,6 +1968,8 @@ class AndroidScreen(
         const val HINT_PASTE_BLOCKED = "The text could not be entered: the field is not in the element list, so it can only be pasted, " +
             "and the clipboard could not be used safely right now. Call hand_to_user so the user can type it."
         val IN_USE_BY_OTHER = ActionResult.Failed("app_in_use_by_other_task")
+        /** 隐私名单挡下的动作的错误码。 */
+        const val PRIVACY_BLOCKED = com.wangzan101.mika.core.privacy.SensitiveAppPolicy.BLOCKED
 
         const val QUIET_MS = 500L
 

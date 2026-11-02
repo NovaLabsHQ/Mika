@@ -107,6 +107,10 @@ class LazyPhoneScreen(
     override suspend fun checkScreen(): ScreenCheck? = port?.checkScreen()
     override suspend fun isProtected() = port?.isProtected() ?: false
     override suspend fun frameGrid() = port?.frameGrid()
+    override suspend fun foregroundPackage(): String? = port?.foregroundPackage()
+    // 只在要执行系统命令前问(那时本来就要接上):接上再问,第一条命令也照样查
+    override suspend fun mainScreenPackage(): String? = built()?.mainScreenPackage()
+    override suspend fun sendToUserScreen(packageName: String): Boolean = port?.sendToUserScreen(packageName) ?: false
 
     private fun empty() = ScreenSnapshot(snapshotId(), null, emptyList(), width, height, hasWindow = false)
 

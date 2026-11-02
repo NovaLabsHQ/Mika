@@ -1,5 +1,6 @@
 package com.wangzan101.mika.task
 
+import com.wangzan101.mika.core.privacy.PrivacyScreen
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
@@ -449,6 +450,10 @@ class TaskRun(
             val states = DeviceStateWatcher(service) { id -> phone?.shell?.topTaskId(id) ?: -1 }.also { watcher = it }
 
             /** 接上手机:连内置助手、等无障碍、备好(到第一次 launch_app 才建的)虚拟屏;缺一样就报 phone_unavailable。 */
+            // 设置 › 隐私与数据 › 敏感 App:每次现读,改了马上生效
+            val privacy = { pkg: String -> FeatureFlags.get(service).sensitiveApps().blocked(pkg) }
+            // 预览画面(胶囊、主界面)在虚拟屏建好时就开始收,那时还没有 AndroidScreen:接上后记在这里,挡住的 App 在前时不送画面
+            var shownScreen: AndroidScreen? = null
             suspend fun connectPhone(): AndroidScreen {
                 // 版本要求只属于手机操作;旧系统仍可聊天、使用网页和沙箱,也不应被引导去配对不支持的助手。
                 if (Build.VERSION.SDK_INT < Prerequisites.MIN_SDK) throw PhoneUnavailable(TaskService.TOO_OLD)
@@ -484,7 +489,9 @@ class TaskRun(
                         create()
                     }.also { d ->
                         _displayId.value = d.displayId
-                        side.launch { d.frames.collect { if (dispatcher?.surface != WEB) _frames.value = it } }
+                        side.launch {
+                            d.frames.collect { if (dispatcher?.surface != WEB) _frames.value = it.takeUnless { shownScreen?.blockedOnTop == true } }
+                        }
                     }
                 }
                 val screen = AndroidScreen(
@@ -501,7 +508,9 @@ class TaskRun(
                     typing = { pkg -> pace.typing(PlacePace.of(pkg?.let(skills::appPace))) },
                     // 设置 › 干活时 › 别动这些 App:每次现读,改了马上生效
                     leaveAlone = { FeatureFlags.get(service).leaveAloneApps() },
+                    blocked = privacy,
                 )
+                shownScreen = screen
                 val audio = recovery.audioMute(shell, key).also { mute = it }
                 val side0 = PhoneSide(shell, a11y, screen, agentDisplay, audio)
                 phone = side0
@@ -524,6 +533,10 @@ class TaskRun(
                         withContext(Dispatchers.IO) { runCatching { AppCopyReader.read(s, launchableApps(service.packageManager, service.packageName)) }.getOrNull() }
                     }.orEmpty()
                 }) { connectPhone() }
+            // 模型用的手机端口外面再包一层隐私名单:挡住的 App 打不开、读不到、点不了(见 PrivacyScreen)
+            val agentPhone = PrivacyScreen(phoneScreen, privacy, label = { pkg ->
+                withContext(Dispatchers.IO) { runCatching { service.packageManager.getApplicationLabel(service.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrNull() }
+            })
             // 挪回虚拟屏后等窗口出现,Agent 接下来读屏才读得到
             suspend fun moveTask(taskId: Int, to: Int): Boolean {
                 val p = phone ?: return false
@@ -620,7 +633,7 @@ class TaskRun(
             val runApproval = approvalControl.start(remote = provenance.origin == RunOrigin.Mcp || provenance.origin == RunOrigin.Channel).also { approval = it }
             val childRunner = if (provenance.origin == RunOrigin.Ui && web != null) ChildAgentRunner(
                 create = { childSpec ->
-                    val childTools = toolDispatcher(phoneScreen, model.capabilities.vision,
+                    val childTools = toolDispatcher(agentPhone, model.capabilities.vision,
                         web = web, webPacing = { PagePacing.human() }, webPlacePace = { PlacePace.of(catalog.sitePace(it)) },
                         webIdleScroll = { IdleScroll(Random.Default) },
                         appPacing = { pace.appPacing() }, appPace = { PlacePace.of(catalog.appPace(it)) }, appIdleScroll = { IdleScroll(Random.Default) },
@@ -635,7 +648,7 @@ class TaskRun(
                 store = (service.application as MikaApp).childRuns,
                 ownerAlive = { job?.isActive == true },
             ).also { children = it } else null
-            val tools = toolDispatcher(phoneScreen, model.capabilities.vision, catalog, recordFrames = true, vision = vision?.let { VisionService(it, BitmapImageOps) },
+            val tools = toolDispatcher(agentPhone, model.capabilities.vision, catalog, recordFrames = true, vision = vision?.let { VisionService(it, BitmapImageOps) },
                 stableRefs = speed.inlineScreen, inlineScreen = speed.inlineScreen,
                 adaptiveVision = speed.adaptiveVision,
                 deepLinks = speed.deepLinks, memory = memory, profile = if (memory != null) memoryRuntime.profile() else null,
