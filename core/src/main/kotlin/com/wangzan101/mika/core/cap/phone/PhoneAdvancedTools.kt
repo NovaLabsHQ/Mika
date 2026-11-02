@@ -1,5 +1,7 @@
 package com.wangzan101.mika.core.cap.phone
 
+import com.wangzan101.mika.core.privacy.SensitiveAppPolicy
+import com.wangzan101.mika.core.uistate.SystemCommandResult
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.observation.Untrusted
 import com.wangzan101.mika.core.prompt.Feedback
@@ -329,6 +331,11 @@ internal object PhoneCommand : PhoneTool {
             put("hint", Feedback.format("system_command.refused", "use" to Feedback[purpose!!.feedbackKey]))
         })
         val result = ctx.screen.systemCommand(command) ?: return fail("no_app_open")
+        // 隐私名单挡下的命令没执行:按动作失败说,不算命令失败
+        if (result.exitCode == SystemCommandResult.BLOCKED_BY_PRIVACY) return ToolExecution(buildJsonObject {
+            put("ok", false); put("error", SensitiveAppPolicy.BLOCKED)
+            put("hint", listOf(Feedback["failure.${SensitiveAppPolicy.BLOCKED}"], result.output).joinToString(" "))
+        })
         phone.commandFailures = if (result.exitCode == 0) 0 else phone.commandFailures + 1
         if (purpose != null) phone.commandSteered = true
         // 模仿专门工具的命令、连着失败的命令:第一次提醒换回专门工具,照样执行

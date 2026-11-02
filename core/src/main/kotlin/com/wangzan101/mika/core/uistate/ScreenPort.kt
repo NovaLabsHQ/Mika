@@ -89,6 +89,8 @@ data class ScreenSnapshot(
     val windows: List<UiWindowTree> = emptyList(),
     /** 上一个动作过后才开到用户主屏上、读这一屏前刚挪回来的 App(见 [OpenedElsewhere]);没有为 null。 */
     val opened: OpenedElsewhere? = null,
+    /** 最上面是隐私名单上的 App(包名):这一屏故意是空白的,不带元素(见 [com.wangzan101.mika.core.privacy.PrivacyScreen]);不是为 null。 */
+    val blockedApp: String? = null,
 )
 
 /**
@@ -143,7 +145,12 @@ data class ScreenEvent(val type: String, val packageName: String?, val text: Str
 data class VisibleTextLine(val text: String, val bounds: List<Int>, val confidence: Float? = null)
 
 /** 内置助手以 Android shell 身份执行命令的结果。 */
-data class SystemCommandResult(val exitCode: Int, val output: String)
+data class SystemCommandResult(val exitCode: Int, val output: String) {
+    companion object {
+        /** 隐私名单挡下、没执行的命令的 [exitCode];[output] 是说明。 */
+        const val BLOCKED_BY_PRIVACY = -126
+    }
+}
 
 /** 输入后读回输入框的核对结果;读不回来(密码框、读不到节点)为 UNKNOWN。 */
 enum class Verification(val wire: String) { MATCH("match"), MISMATCH("mismatch"), UNKNOWN("unknown") }
@@ -294,4 +301,13 @@ interface ScreenPort {
 
     /** 此刻画面缩成的亮度格子(判动作效果用,见 [FrameGrid.sample]);没有画面、端口不支持时为 null。要便宜:不编码图片。 */
     suspend fun frameGrid(): FrameGrid? = null
+
+    /** 此刻 Agent 屏最上面的 App 包名(便宜,不读无障碍树);没有画面或不支持时为 null。隐私名单据此判定。 */
+    suspend fun foregroundPackage(): String? = null
+
+    /** 此刻用户主屏最上面的 App 包名;不支持时为 null。 */
+    suspend fun mainScreenPackage(): String? = null
+
+    /** 把 Agent 屏上 [packageName] 的任务送回用户的主屏(隐私名单上的 App 用);送走了为 true,不支持为 false。 */
+    suspend fun sendToUserScreen(packageName: String): Boolean = false
 }

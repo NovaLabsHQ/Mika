@@ -111,6 +111,12 @@ Another task is using this app right now. Do something else first, or wait a mom
 ## failure.opened_elsewhere
 This action was not done: the previous action had just opened an app on the user's own screen (it came up late), so the screen changed under you.
 
+## failure.app_blocked_by_privacy
+Not done: that app is on the user's privacy list of sensitive apps (banking, finance, health, passwords and similar), so Mika cannot open, see or operate it. Do not retry and do not try another way into it (a link, a share, a system action or a shell command). Carry on without it if you can; if the task needs it, tell the user it is on their privacy list, which they can change in Settings › Privacy › Sensitive apps.
+
+## blocked_by_privacy
+{{app}} is in front on Mika's screen, but it is on the user's privacy list of sensitive apps, so its screen is not shown and Mika does not operate it; Mika is sending it back to the user's own screen. Do not try to use it. Observe again to see Mika's screen, and if the task needs that app, tell the user it is on their privacy list (Settings › Privacy › Sensitive apps).
+
 ## failure.app_not_found
 That app is not installed or has no launchable screen. Use phone_list_apps to find the exact package.
 

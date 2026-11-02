@@ -40,7 +40,7 @@ internal object PromptSurfaceFeedback {
         "tab_crashed", "obscured", "offscreen", "key_not_allowed", "no_tab_open", "handed_over", "site_mode_unavailable",
         "downloads_unavailable", "devtools_unavailable", "input_uncertain", "not_a_select", "no_such_option", "option_disabled",
         "select_disabled", "select_not_applied", "web_surface_inactive", "upload_not_opened", "upload_unavailable", "focus_moved",
-        "link_unresolved", "invalid_link", "phone_unavailable", "ref_expired", "some_new_code", "Not A Code!",
+        "link_unresolved", "invalid_link", "phone_unavailable", "app_blocked_by_privacy", "ref_expired", "some_new_code", "Not A Code!",
     )
 
     private class Checked(private val c: ScreenCheck?, private val base: FakeScreen = FakeScreen()) : ScreenPort by base {
