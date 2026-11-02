@@ -49,6 +49,8 @@ mika doctor --device SERIAL --json
 
 You may omit `--device` when exactly one device is online; the existing ANDROID_SERIAL environment variable is also supported. Multiple devices require a choice, and connection failure never selects a different phone. `connect` runs Mika's official bootstrap script to enable computer access and start the required helper; it does not submit a task. Other commands only read the current connection.
 
+Over ADB the CLI also picks which Mika build to talk to. It looks for the side-by-side builds `com.wangzan101.mika`, `com.wangzan101.mika.voice` (Mika Voice) and `com.wangzan101.mika.tester` (Mika Tester); if exactly one is installed it is used, otherwise add `--package PACKAGE`, for example `mika connect --package com.wangzan101.mika.tester --json`. The chosen package is reported as `package`. `--package` is not used with `--url`.
+
 Each invocation reads the current token, port and boot number, allocates its own temporary `adb forward tcp:0` mapping, then removes only that mapping. Tokens stay in process memory; bootstrap output is captured instead of printed. Exiting the CLI leaves the phone service and ongoing tasks running.
 
 For LAN/private-network access explicitly enabled in the phone's settings:

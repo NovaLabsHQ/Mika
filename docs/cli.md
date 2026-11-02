@@ -49,6 +49,8 @@ mika doctor --device SERIAL --json
 
 只有一个在线设备时可省略 `--device`;也支持已有的 ANDROID_SERIAL 环境变量。多设备不猜目标,连接失败也不切换到另一台手机。`connect` 调用 Mika 写到手机上的官方启动脚本,打开电脑连接并启动所需助手;此动作不提交业务任务。其余命令只读取当前连接。
 
+走 ADB 时 CLI 还要挑连哪个 Mika:会在并存安装的 `com.wangzan101.mika`、`com.wangzan101.mika.voice`(Mika Voice)、`com.wangzan101.mika.tester`(Mika Tester)里找;只装了一个就用它,装了多个时加 `--package 包名`,例如 `mika connect --package com.wangzan101.mika.tester --json`。结果里的 `package` 是实际用的包。`--package` 不和 `--url` 一起用。
+
 每次调用重新读取当前令牌、端口和开机编号,申请自己的 `adb forward tcp:0` 临时端口,完成后只删除该转发。令牌只保存在进程内存中,启动脚本的原始输出不转发到终端。CLI 退出不关闭手机服务,也不停止正在执行的任务。
 
 也可以使用手机设置里显式开启的局域网/私有网络连接:

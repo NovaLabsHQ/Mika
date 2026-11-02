@@ -17,9 +17,15 @@ import urllib.request
 
 VERSION = "0.1.0"
 API = "/api/v1"
-PHONE_FILES = "/sdcard/Android/data/com.wangzan101.mika/files"
-INFO_FILE = PHONE_FILES + "/mcp-usb.json"
-CONNECT_SCRIPT = PHONE_FILES + "/connect-computer.sh"
+# Side-by-side builds: release Mika, Mika Voice (voicedev) and Mika Tester (testerdev).
+PACKAGES = ("com.wangzan101.mika", "com.wangzan101.mika.voice", "com.wangzan101.mika.tester")
+PACKAGE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+")
+INFO_NAME = "mcp-usb.json"
+CONNECT_NAME = "connect-computer.sh"
+
+
+def phone_file(package, name):
+    return "/sdcard/Android/data/" + package + "/files/" + name
 MAX_RESPONSE = 4 * 1024 * 1024
 HANDOFF = {"waiting_for_answer", "waiting_on_phone"}
 TERMINAL = {"done", "failed", "cancelled"}
@@ -160,6 +166,23 @@ class Adb:
         if self.run("get-state") != "device":
             raise CliError("device_offline", "The selected phone is not online; the CLI will not switch devices.")
 
+    def installed(self, prefix):
+        listed = self.run("shell", "pm", "list", "packages", prefix)
+        return {line.strip()[len("package:"):] for line in listed.splitlines() if line.strip().startswith("package:")}
+
+    def choose_package(self, requested=None):
+        """Use --package when given (it must be installed); otherwise the single installed Mika build."""
+        if requested:
+            if requested not in self.installed(requested):
+                raise CliError("package_not_installed", "Package " + requested + " is not installed on the selected phone.")
+            return requested
+        found = [p for p in PACKAGES if p in self.installed(PACKAGES[0])]
+        if not found:
+            raise CliError("package_not_installed", "No Mika build is installed on the selected phone.")
+        if len(found) > 1:
+            raise CliError("package_selection", "More than one Mika build is installed; choose one with --package.", packages=found)
+        return found[0]
+
 
 def base_url(raw):
     try:
@@ -177,8 +200,8 @@ def base_url(raw):
 @contextlib.contextmanager
 def connection(args, secrets):
     if args.url:
-        if args.device or not args.token_file:
-            raise CliError("arguments", "Use --url with --token-file, without --device.")
+        if args.device or args.package or not args.token_file:
+            raise CliError("arguments", "Use --url with --token-file, without --device or --package.")
         base = base_url(args.url)
         try:
             token = clean_token(Path(args.token_file).read_text(encoding="utf-8").strip())
@@ -191,10 +214,11 @@ def connection(args, secrets):
         raise CliError("arguments", "--token-file requires --url; ADB reads the current token from the phone.")
     adb = Adb(args.adb, args.device or os.environ.get("ANDROID_SERIAL"))
     adb.select()
+    package = adb.choose_package(args.package)
     if args.command == "connect":
-        adb.run("shell", "sh", CONNECT_SCRIPT, timeout=60)
+        adb.run("shell", "sh", phone_file(package, CONNECT_NAME), timeout=60)
     try:
-        info = json.loads(adb.run("shell", "cat", INFO_FILE))
+        info = json.loads(adb.run("shell", "cat", phone_file(package, INFO_NAME)))
         if not isinstance(info, dict):
             raise ValueError()
     except ValueError:
@@ -213,7 +237,7 @@ def connection(args, secrets):
     if not local.isascii() or not local.isdigit() or not 1 <= int(local) <= 65535:
         raise CliError("adb", "ADB did not return a valid temporary forwarding port.")
     try:
-        yield Client("http://127.0.0.1:" + local + API, token, args.request_timeout), {"transport": "adb", "device": adb.device}
+        yield Client("http://127.0.0.1:" + local + API, token, args.request_timeout), {"transport": "adb", "device": adb.device, "package": package}
     finally:
         # Never remove all forwards or a mapping created by another invocation.
         try:
@@ -253,9 +277,11 @@ def execute(args, secrets):
             args.text = text_input(args.text, args.text_file, "answer")
         if hasattr(args, "task_id") and not re.fullmatch(r"[A-Za-z0-9_-]+", args.task_id):
             raise CliError("arguments", "task_id must be an ID returned by Mika.")
+    if args.package is not None and not PACKAGE_PATTERN.fullmatch(args.package):
+        raise CliError("arguments", "--package must be an Android package name such as " + PACKAGES[2] + ".")
     if args.command == "devices":
-        if args.url or args.token_file:
-            raise CliError("arguments", "devices lists ADB devices; it does not use --url or --token-file.")
+        if args.url or args.token_file or args.package:
+            raise CliError("arguments", "devices lists ADB devices; it does not use --url, --token-file or --package.")
         return {"devices": Adb(args.adb).devices()}
     with connection(args, secrets) as (client, transport):
         info = client.discover()
@@ -324,6 +350,7 @@ def parser():
         ("--url", "Phone HTTP origin or /api/v1 URL; bypasses ADB"),
         ("--token-file", "UTF-8 file containing the token for --url"),
         ("--adb", "ADB executable (default: adb)"),
+        ("--package", "Mika build to use over ADB: " + ", ".join(PACKAGES) + " (default: the only one installed)"),
     ]:
         common.add_argument(flag, help=help_text, default=argparse.SUPPRESS)
     common.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="Compact JSON output, including errors")
@@ -362,7 +389,7 @@ def main(argv=None):
     compact = "--json" in argv
     try:
         args = parser().parse_args(argv)
-        for key, default in {"device": None, "url": None, "token_file": None, "adb": "adb", "request_timeout": 15}.items():
+        for key, default in {"device": None, "url": None, "token_file": None, "adb": "adb", "package": None, "request_timeout": 15}.items():
             if not hasattr(args, key):
                 setattr(args, key, default)
         result = execute(args, secrets)
