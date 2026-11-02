@@ -97,4 +97,22 @@
     <string name="routes_clear_title">Clear all saved routes?</string>
     <string name="routes_clear_body">After clearing, Mika works things out step by step again next time. Other settings aren’t affected.</string>
     <string name="clear">Clear</string>
+    <string name="settings_sensitive_apps">Sensitive apps</string>
+    <string name="settings_sensitive_apps_sub">Mika can’t open, see or use them</string>
+    <string name="settings_sensitive_apps_foot">Banking, payment, investing, crypto, health, medical, password manager and authenticator apps are blocked by default. Mika can’t open them, read their screens or tap in them; if one opens on Mika’s screen, it goes straight back to yours. Turn an app off only if you want Mika to use it.</string>
+    <string name="settings_sensitive_apps_found">On this phone</string>
+    <string name="settings_sensitive_apps_none">No sensitive apps found on this phone</string>
+    <string name="settings_sensitive_reason_curated">%1$s · known app</string>
+    <string name="settings_sensitive_reason_keyword">%1$s · name has “%2$s”</string>
+    <string name="settings_sensitive_reason_added">Added by you</string>
+    <string name="settings_sensitive_add_title">Block another app</string>
+    <string name="settings_sensitive_search">Search installed apps</string>
+    <string name="settings_sensitive_cat_banking">Banking</string>
+    <string name="settings_sensitive_cat_finance">Payments &amp; money</string>
+    <string name="settings_sensitive_cat_brokerage">Investing</string>
+    <string name="settings_sensitive_cat_crypto">Crypto</string>
+    <string name="settings_sensitive_cat_health">Health</string>
+    <string name="settings_sensitive_cat_medical">Medical</string>
+    <string name="settings_sensitive_cat_passwords">Passwords</string>
+    <string name="settings_sensitive_cat_authenticator">Authenticator</string>
 </resources>

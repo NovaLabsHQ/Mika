@@ -90,4 +90,22 @@
     <string name="routes_clear_title">清除全部已記住的操作路線?</string>
     <string name="routes_clear_body">清除後,做過的事下次會重新一步步來做,不影響別的設定。</string>
     <string name="clear">清除</string>
+    <string name="settings_sensitive_apps">敏感 App</string>
+    <string name="settings_sensitive_apps_sub">Mika 打不開、看不到、也不會操作</string>
+    <string name="settings_sensitive_apps_foot">銀行、支付、投資、加密貨幣、健康、醫療、密碼管理和驗證器類 App 預設全部擋住。Mika 打不開它們，讀不到它們的螢幕，也不會在裡面點按；它們要是開到 Mika 的螢幕上，會馬上送回你的螢幕。只有想讓 Mika 用某個 App 時才把它關掉。</string>
+    <string name="settings_sensitive_apps_found">這支手機上的</string>
+    <string name="settings_sensitive_apps_none">這支手機上沒有找到敏感 App</string>
+    <string name="settings_sensitive_reason_curated">%1$s · 已知 App</string>
+    <string name="settings_sensitive_reason_keyword">%1$s · 名稱含「%2$s」</string>
+    <string name="settings_sensitive_reason_added">你加的</string>
+    <string name="settings_sensitive_add_title">另外擋住一個 App</string>
+    <string name="settings_sensitive_search">搜尋已安裝的 App</string>
+    <string name="settings_sensitive_cat_banking">銀行</string>
+    <string name="settings_sensitive_cat_finance">支付與款項</string>
+    <string name="settings_sensitive_cat_brokerage">投資</string>
+    <string name="settings_sensitive_cat_crypto">加密貨幣</string>
+    <string name="settings_sensitive_cat_health">健康</string>
+    <string name="settings_sensitive_cat_medical">醫療</string>
+    <string name="settings_sensitive_cat_passwords">密碼</string>
+    <string name="settings_sensitive_cat_authenticator">驗證器</string>
 </resources>

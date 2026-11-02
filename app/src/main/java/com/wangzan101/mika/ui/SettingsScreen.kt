@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页。 */
-private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, LeaveAlone, Capsule, Voice, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Board, Developer, RunStats }
+private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, LeaveAlone, SensitiveApps, Capsule, Voice, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Board, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 基本 / 隐私与数据 / 高级 / 关于四组。各子页面在这里切换(返回键先回首页),
@@ -104,6 +104,7 @@ fun SettingsScreen(
     var keepScreenOn by remember { mutableStateOf(flags.keepScreenOn()) }
     var muteTarget by remember { mutableStateOf(flags.muteTarget()) }
     var leaveAlone by remember { mutableStateOf(flags.leaveAloneApps()) }
+    var sensitive by remember { mutableStateOf(flags.sensitiveApps()) }
     var operatingPace by remember { mutableStateOf(flags.operatingPace()) }
     var capsuleMode by remember { mutableStateOf(flags.capsuleMode()) }
     // 换语言时界面会重建,这里每次进来读一次即可
@@ -168,6 +169,7 @@ fun SettingsScreen(
             onOpenNotifications = { notificationsFrom = SettingsPage.Home; page = SettingsPage.Notifications },
             language = language, onOpenLanguage = { page = SettingsPage.Language },
             onOpenMemory = onOpenMemory,
+            onOpenSensitiveApps = { page = SettingsPage.SensitiveApps },
             webSitesCount = webSites?.sites?.size, onOpenWebSites = { page = SettingsPage.WebSites },
             sandbox = sandboxStatus, onOpenSandbox = { page = SettingsPage.Sandbox },
             routes = routeCount, onOpenRoutes = { page = SettingsPage.Routes },
@@ -191,6 +193,7 @@ fun SettingsScreen(
             operatingPace = operatingPace, onOperatingPace = { flags.setOperatingPace(it); operatingPace = it },
             leaveAloneCount = leaveAlone.size, onOpenLeaveAlone = { page = SettingsPage.LeaveAlone },
         )
+        SettingsPage.SensitiveApps -> SensitiveAppsScreen(sensitive, onChange = { flags.setSensitiveApps(it); sensitive = it }, onBack = toHome)
         SettingsPage.LeaveAlone -> LeaveAloneScreen(leaveAlone, onChange = { flags.setLeaveAloneApps(it); leaveAlone = it }, onBack = back)
         SettingsPage.Language -> LanguageScreen(language, onLanguage = { AppLanguage.set(context, it) }, onBack = toHome)
         SettingsPage.Voice -> (context.applicationContext as com.wangzan101.mika.MikaApp).let { app ->
@@ -265,6 +268,8 @@ fun SettingsContent(
     language: AppLanguage = AppLanguage.System,
     onOpenLanguage: () -> Unit = {},
     onOpenMemory: (() -> Unit)? = null,
+    /** 设置 › 隐私与数据 › 敏感 App;为空时不显示这一行。 */
+    onOpenSensitiveApps: (() -> Unit)? = null,
     webSitesCount: Int? = null,
     onOpenWebSites: () -> Unit = {},
     sandbox: SandboxStatus? = null,
@@ -321,7 +326,7 @@ fun SettingsContent(
             }
         }
 
-        val privacyRows = onOpenMemory != null || webSitesCount != null
+        val privacyRows = onOpenMemory != null || webSitesCount != null || onOpenSensitiveApps != null
         if (privacyRows) {
             GroupLabel(stringResource(R.string.settings_privacy))
             GroupCard {
@@ -332,6 +337,9 @@ fun SettingsContent(
                 }
                 webSitesCount?.let {
                     ListRow(MikaIcons.Globe, stringResource(R.string.settings_web_logins), first = take(), onClick = onOpenWebSites) { RowValue(trPlural(R.plurals.settings_count_sites, it)); RowChevron() }
+                }
+                onOpenSensitiveApps?.let {
+                    ListRow(MikaIcons.Lock, stringResource(R.string.settings_sensitive_apps), stringResource(R.string.settings_sensitive_apps_sub), first = take(), onClick = it) { RowChevron() }
                 }
             }
         }
