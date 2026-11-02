@@ -1,0 +1,4 @@
+# 名称 版本 URL sha256
+# 语音的运行库:sherpa-onnx 官方发布页上的安卓 AAR(ONNX Runtime 静态链接进 libsherpa-onnx-jni.so,不另带 libonnxruntime.so)。
+# 由 tools/voice/fetch-sherpa-onnx.sh 下载、核对后放到 app/libs/(不进 git);构建只打 arm64-v8a 那一份。
+sherpa-onnx 2.0.1 https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-static-link-onnxruntime-2.0.1.aar 07e042d97f3a6bd5b7fe74d4eef0513dc01a714b16c15a903250095aba43a575

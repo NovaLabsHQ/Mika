@@ -31,6 +31,10 @@ class LicensesTest {
         assertTrue(Licenses.GPL_SOURCE_OFFER.contains("PRoot") && Licenses.GPL_SOURCE_OFFER.contains("talloc"))
         assertTrue(byName.getValue("Alpine Linux").note.contains("gpl-sources.tar.gz"))
         assertEquals("0BSD", byName.getValue("XZ for Java").license)
+        assertEquals("Apache-2.0", byName.getValue("sherpa-onnx").license)
+        assertEquals("MIT", byName.getValue("ONNX Runtime").license)
+        assertEquals("CC-BY-4.0", byName.getValue("Parakeet TDT 0.6B v3").license)
+        assertEquals("MIT", byName.getValue("Silero VAD").license)
     }
 
     /** 「开源许可」页逐个列出自带运行环境里的软件包,每个都有许可证。 */

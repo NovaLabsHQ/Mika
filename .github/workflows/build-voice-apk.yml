@@ -77,6 +77,9 @@ jobs:
           # feature/voice build would never save a cache.
           cache-read-only: false
 
+      - name: Fetch sherpa-onnx (voice runtime)
+        run: tools/voice/fetch-sherpa-onnx.sh
+
       - name: Assemble voicedev APK
         run: ./gradlew :app:assembleVoicedev
 
