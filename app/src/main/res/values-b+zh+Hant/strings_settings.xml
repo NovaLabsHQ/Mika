@@ -47,6 +47,17 @@
     <string name="settings_keep_on_sub">任務進行時螢幕不熄滅,結束後恢復</string>
     <string name="settings_mute">被操作的 App 靜音</string>
     <string name="settings_mute_sub">Mika 操作的 App 不出聲,你接手時恢復聲音</string>
+    <string name="settings_leave_alone">別動這些 App</string>
+    <string name="settings_leave_alone_sub">Mika 不會把它們從你的螢幕上拿走</string>
+    <string name="settings_leave_alone_none">無</string>
+    <string name="settings_leave_alone_foot">Mika 從不把這些 App 從你的螢幕移到它自己的螢幕上。它們要是出現在 Mika 的螢幕上，Mika 會把它們送回你的螢幕，不會關掉。</string>
+    <string name="settings_leave_alone_chosen">不動的 App</string>
+    <string name="settings_leave_alone_apps">已安裝的 App</string>
+    <string name="settings_leave_alone_search">搜尋 App</string>
+    <string name="settings_leave_alone_package">套件名稱</string>
+    <string name="settings_leave_alone_package_hint">com.example.app</string>
+    <string name="settings_leave_alone_add">新增</string>
+    <string name="settings_leave_alone_empty">沒有符合的 App</string>
     <string name="settings_pace">操作節奏</string>
     <string name="settings_pace_fast">快</string>
     <string name="settings_pace_fast_detail">步與步之間不停，文字一次填好</string>

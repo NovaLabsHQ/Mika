@@ -52,6 +52,17 @@
     <string name="settings_keep_on_sub">The screen stays on while a task runs, then goes back to normal</string>
     <string name="settings_mute">Mute the app being used</string>
     <string name="settings_mute_sub">Apps Mika is using stay silent; sound returns when you take over</string>
+    <string name="settings_leave_alone">Leave these apps alone</string>
+    <string name="settings_leave_alone_sub">Mika never takes them off your screen</string>
+    <string name="settings_leave_alone_none">None</string>
+    <string name="settings_leave_alone_foot">Mika never moves these apps from your screen to its own. If one shows up on Mika’s screen, Mika sends it back to yours without closing it.</string>
+    <string name="settings_leave_alone_chosen">Left alone</string>
+    <string name="settings_leave_alone_apps">Installed apps</string>
+    <string name="settings_leave_alone_search">Search apps</string>
+    <string name="settings_leave_alone_package">Package</string>
+    <string name="settings_leave_alone_package_hint">com.example.app</string>
+    <string name="settings_leave_alone_add">Add</string>
+    <string name="settings_leave_alone_empty">No apps match</string>
     <string name="settings_pace">Operating pace</string>
     <string name="settings_pace_fast">Fast</string>
     <string name="settings_pace_fast_detail">No pauses between steps; text is filled in at once</string>

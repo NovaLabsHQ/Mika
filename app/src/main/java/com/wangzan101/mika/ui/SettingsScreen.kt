@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页。 */
-private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, Capsule, Voice, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Board, Developer, RunStats }
+private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, LeaveAlone, Capsule, Voice, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Board, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 基本 / 隐私与数据 / 高级 / 关于四组。各子页面在这里切换(返回键先回首页),
@@ -103,6 +103,7 @@ fun SettingsScreen(
     var parallelMax by remember { mutableIntStateOf(flags.parallelMax()) }
     var keepScreenOn by remember { mutableStateOf(flags.keepScreenOn()) }
     var muteTarget by remember { mutableStateOf(flags.muteTarget()) }
+    var leaveAlone by remember { mutableStateOf(flags.leaveAloneApps()) }
     var operatingPace by remember { mutableStateOf(flags.operatingPace()) }
     var capsuleMode by remember { mutableStateOf(flags.capsuleMode()) }
     // 换语言时界面会重建,这里每次进来读一次即可
@@ -147,6 +148,7 @@ fun SettingsScreen(
             SettingsPage.RunStats -> SettingsPage.Developer
             SettingsPage.SelfCheck -> SettingsPage.Recovery
             SettingsPage.Notifications -> notificationsFrom
+            SettingsPage.LeaveAlone -> SettingsPage.DuringWork
             else -> SettingsPage.Home
         }
     }
@@ -187,7 +189,9 @@ fun SettingsScreen(
             muteTarget, onMuteTarget = { flags.setMuteTarget(it); muteTarget = it },
             parallel, onParallelMax = { flags.setParallelMax(it); parallelMax = it }, onBack = toHome,
             operatingPace = operatingPace, onOperatingPace = { flags.setOperatingPace(it); operatingPace = it },
+            leaveAloneCount = leaveAlone.size, onOpenLeaveAlone = { page = SettingsPage.LeaveAlone },
         )
+        SettingsPage.LeaveAlone -> LeaveAloneScreen(leaveAlone, onChange = { flags.setLeaveAloneApps(it); leaveAlone = it }, onBack = back)
         SettingsPage.Language -> LanguageScreen(language, onLanguage = { AppLanguage.set(context, it) }, onBack = toHome)
         SettingsPage.Voice -> (context.applicationContext as com.wangzan101.mika.MikaApp).let { app ->
             VoiceScreen(app.voice, app.voiceEngines, onBack = toHome)
