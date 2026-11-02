@@ -102,6 +102,8 @@ class AndroidScreen(
     private val pacing: GesturePacing = GesturePacing.human(),
     /** 在这个包名的 App 里打字的节奏(见 [TypingPacing]);默认一次写入全文。 */
     private val typing: (String?) -> TypingPacing = { TypingPacing.Instant },
+    /** 设置里「别动这些 App」的包:从不挪回 Mika 的屏;冒到 Mika 屏上就送回用户的主屏(见 [returnIntruder])。 */
+    private val leaveAlone: () -> Set<String> = { emptySet() },
 ) : ScreenPort {
     /** 屏还没建时为 -1;只在确认屏已建好之后用。 */
     private val displayId get() = display.current?.displayId ?: -1
@@ -134,6 +136,22 @@ class AndroidScreen(
 
     /** 显式使用系统命令或事件工具时按需建屏；普通任务等到第一次打开 App 才建。 */
     suspend fun ensureDisplay() { display.get() }
+
+    /** 此刻 Mika 屏上最上面的任务;屏没建或问不到为 -1。 */
+    private fun agentTop(): Int = if (!opened) -1 else runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
+
+    /**
+     * 在 IO 线程上做一个动作,前后告诉 [guard]:动作进行中、刚做完时不判有没有不该在这里的 App,
+     * 动作前后在最上面的任务算模型自己操作出来的。
+     */
+    private suspend fun <T> acting(block: suspend CoroutineScope.() -> T): T = withContext(Dispatchers.IO) {
+        guard.actionStarted(SystemClock.uptimeMillis(), agentTop())
+        try {
+            block()
+        } finally {
+            guard.actionEnded(SystemClock.uptimeMillis(), agentTop())
+        }
+    }
 
     // ---------- 读屏 ----------
 
@@ -324,28 +342,28 @@ class AndroidScreen(
 
     // ---------- 动作 ----------
 
-    override suspend fun tapRef(ref: String, snapshotId: String): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun tapRef(ref: String, snapshotId: String): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         when (val target = resolve(ref, snapshotId)) {
             null -> ActionResult.Failed("ref_expired")
             else -> verified(relocatedTo = target.second) { click(target.first) }
         }
     }
 
-    override suspend fun tapXY(x: Int, y: Int): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun tapXY(x: Int, y: Int): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         verified { tapAt(x, y) }
     }
 
-    override suspend fun doubleTapRef(ref: String, snapshotId: String): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
-        val target = resolve(ref, snapshotId) ?: return@withContext ActionResult.Failed("ref_expired")
+    override suspend fun doubleTapRef(ref: String, snapshotId: String): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
+        val target = resolve(ref, snapshotId) ?: return@acting ActionResult.Failed("ref_expired")
         val rect = android.graphics.Rect().also { target.first.getBoundsInScreen(it) }
         verified(relocatedTo = target.second) { doubleTapAt(pacing.within(rect.left, rect.top, rect.right, rect.bottom)) }
     }
 
-    override suspend fun doubleTapXY(x: Int, y: Int): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun doubleTapXY(x: Int, y: Int): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         verified { doubleTapAt(pacing.near(x, y)) }
     }
 
@@ -355,15 +373,15 @@ class AndroidScreen(
         return a11y.taps(displayId, at.first.toFloat(), at.second.toFloat(), 2, pacing.doublePress(), pacing.doubleGap())
     }
 
-    override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
-        verified { drag(listOf(x1 to y1, x2 to y2), durationMs, bow = true) }
+    override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
+        verified(opensApps = false) { drag(listOf(x1 to y1, x2 to y2), durationMs, bow = true) }
     }
 
-    override suspend fun gesture(paths: List<List<Pair<Int, Int>>>, durationMs: Long): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
-        if (paths.isEmpty() || paths.size > 2 || paths.any { it.size < 2 || it.size > 32 }) return@withContext ActionResult.Failed("invalid_gesture")
-        verified {
+    override suspend fun gesture(paths: List<List<Pair<Int, Int>>>, durationMs: Long): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
+        if (paths.isEmpty() || paths.size > 2 || paths.any { it.size < 2 || it.size > 32 }) return@acting ActionResult.Failed("invalid_gesture")
+        verified(opensApps = false) {
             // 一根手指照着画好的路径走,按节奏排快慢;几根手指一起动的只让时长浮动一点
             if (paths.size == 1) return@verified drag(paths.single(), durationMs, bow = false)
             delay(pacing.approach())
@@ -371,11 +389,11 @@ class AndroidScreen(
         }
     }
 
-    override suspend fun scroll(ref: String?, snapshotId: String?, down: Boolean): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun scroll(ref: String?, snapshotId: String?, down: Boolean): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         var relocatedTo: String? = null
         val start = if (ref != null && snapshotId != null) {
-            val target = resolve(ref, snapshotId) ?: return@withContext ActionResult.Failed("ref_expired")
+            val target = resolve(ref, snapshotId) ?: return@acting ActionResult.Failed("ref_expired")
             relocatedTo = target.second
             target.first
         } else {
@@ -387,25 +405,25 @@ class AndroidScreen(
             val cx = display.width / 2
             val (from, to) = if (down) display.height * 3 / 4 to display.height / 4 else display.height / 4 to display.height * 3 / 4
             val r = swipe(cx, from, cx, to)
-            return@withContext if (r is ActionResult.Ok && relocatedTo != null) r.copy(relocated = true, relocatedTo = relocatedTo) else r
+            return@acting if (r is ActionResult.Ok && relocatedTo != null) r.copy(relocated = true, relocatedTo = relocatedTo) else r
         }
         val action = if (down) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-        verified(relocatedTo = relocatedTo) { node.performAction(action) }
+        verified(relocatedTo = relocatedTo, opensApps = false) { node.performAction(action) }
     }
 
     /**
      * 停留时顺手轻轻滚一下:在占了大半屏的那块可滚动内容(信息流、正文)正中慢慢划 [fraction] 个屏高,停稳再抬手、不甩。
      * 弹着输入法、输入框拿着焦点、上面盖着别的窗口(弹框、浮层)、没有够大的可滚动内容时不滚。
      */
-    override suspend fun idleScroll(fraction: Double): Boolean = withContext(Dispatchers.IO) {
-        if (!opened || imeBox() != null || focusedEditable() != null) return@withContext false
-        if (ScreenReader.contentWindows(windows()).count { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } > 1) return@withContext false
+    override suspend fun idleScroll(fraction: Double): Boolean = acting {
+        if (!opened || imeBox() != null || focusedEditable() != null) return@acting false
+        if (ScreenReader.contentWindows(windows()).count { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } > 1) return@acting false
         val area = read().entries.filter { it.element.scrollable }
             .map { e -> android.graphics.Rect().also { e.node.getBoundsInScreen(it) } }
-            .maxByOrNull { it.width().toLong() * it.height() } ?: return@withContext false
-        if (area.width().toLong() * area.height() < display.width.toLong() * display.height * IDLE_MIN_AREA) return@withContext false
+            .maxByOrNull { it.width().toLong() * it.height() } ?: return@acting false
+        if (area.width().toLong() * area.height() < display.width.toLong() * display.height * IDLE_MIN_AREA) return@acting false
         val dist = (display.height * kotlin.math.abs(fraction)).roundToInt().coerceAtMost(area.height() / 2)
-        if (dist < IDLE_MIN_PX) return@withContext false
+        if (dist < IDLE_MIN_PX) return@acting false
         val cx = area.centerX()
         val mid = area.centerY()
         // 往下看(fraction 为正)手指往上划
@@ -413,21 +431,22 @@ class AndroidScreen(
         drag(listOf(cx to from, cx to to), IDLE_SCROLL_MS, bow = true)
     }
 
-    override suspend fun back(): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
-        verified { shell.injectKey(displayId, KeyEvent.KEYCODE_BACK) }
+    override suspend fun back(): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
+        verified(opensApps = false) { shell.injectKey(displayId, KeyEvent.KEYCODE_BACK) }
     }
 
-    override suspend fun pressKey(keyCode: Int): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
-        verified { shell.injectKey(displayId, keyCode) }
+    override suspend fun pressKey(keyCode: Int): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
+        // 只有回车、确认键可能打开别的 App(提交、打开链接)
+        verified(opensApps = keyCode in OPENING_KEYS) { shell.injectKey(displayId, keyCode) }
     }
 
-    override suspend fun typeText(ref: String?, snapshotId: String?, text: String): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun typeText(ref: String?, snapshotId: String?, text: String): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         val found = when (val f = findField(ref, snapshotId)) {
             is Field.Found -> f
-            is Field.Missing -> return@withContext when {
+            is Field.Missing -> return@acting when {
                 f.reason != NO_FOCUS -> ActionResult.Failed(f.reason)
                 // 屏上什么都没拿着输入焦点、也没弹输入法:没有框接得住粘贴,不去粘(粘了界面别处一动就会被当成「可能打进去了」)
                 !somethingHoldsInputFocus() -> ActionResult.Failed(NO_FOCUS)
@@ -483,18 +502,18 @@ class AndroidScreen(
         ok(verification = reported, hint = hint, secret = field.isPassword, relocatedTo = found.relocatedTo)
     }
 
-    override suspend fun clearText(ref: String?, snapshotId: String?): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun clearText(ref: String?, snapshotId: String?): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         val found = when (val f = findField(ref, snapshotId, tapToFocus = false)) {
             is Field.Found -> f
-            is Field.Missing -> return@withContext when {
+            is Field.Missing -> return@acting when {
                 f.reason != NO_FOCUS -> ActionResult.Failed(f.reason)
                 !somethingHoldsInputFocus() -> ActionResult.Failed(NO_FOCUS)
                 else -> clearUnseen()
             }
         }
         val field = found.node
-        verified(relocatedTo = found.relocatedTo) { if (inWebView(field)) inputText(field, "") == true else setText(field, "") }
+        verified(relocatedTo = found.relocatedTo, opensApps = false) { if (inWebView(field)) inputText(field, "") == true else setText(field, "") }
     }
 
     // ---------- 树里看不到的输入框 ----------
@@ -504,26 +523,26 @@ class AndroidScreen(
      * 否则按 [typeUnseen] 粘贴并核对,粘贴前的屏上文字在点完之后读(点出的光标、键盘不算打进去的字)。
      * 点了就换到别的 App(点到了链接、按钮)时不打字。
      */
-    override suspend fun typeAt(x: Int, y: Int, text: String): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun typeAt(x: Int, y: Int, text: String): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         val tapped = verified { tapAt(x, y) }
-        if (tapped !is ActionResult.Ok) return@withContext tapped
+        if (tapped !is ActionResult.Ok) return@acting tapped
         // 点了开出了别的 App(开到用户主屏上又挪回来的也是):不打字,照实报这一下点的结果
-        if (tapped.opened != null) return@withContext tapped
-        tapped.appSwitched?.takeIf { !tapped.switchedByTarget }?.let { return@withContext UnseenField.tapSwitched(it) }
-        if (focusedEditable() != null) return@withContext typeText(null, null, text)
+        if (tapped.opened != null) return@acting tapped
+        tapped.appSwitched?.takeIf { !tapped.switchedByTarget && !tapped.switchedPulledBack }?.let { return@acting UnseenField.tapSwitched(it) }
+        if (focusedEditable() != null) return@acting typeText(null, null, text)
         typeUnseen(text, atPoint = true)
     }
 
     /** 清空这一点上的输入框,做法同 [typeAt]。 */
-    override suspend fun clearAt(x: Int, y: Int): ActionResult = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext NO_APP_OPEN
+    override suspend fun clearAt(x: Int, y: Int): ActionResult = acting {
+        if (!opened) return@acting NO_APP_OPEN
         val tapped = verified { tapAt(x, y) }
-        if (tapped !is ActionResult.Ok) return@withContext tapped
+        if (tapped !is ActionResult.Ok) return@acting tapped
         // 点了开出了别的 App(开到用户主屏上又挪回来的也是):不清空,照实报这一下点的结果
-        if (tapped.opened != null) return@withContext tapped
-        tapped.appSwitched?.takeIf { !tapped.switchedByTarget }?.let { return@withContext UnseenField.tapSwitched(it) }
-        if (focusedEditable() != null) return@withContext clearText(null, null)
+        if (tapped.opened != null) return@acting tapped
+        tapped.appSwitched?.takeIf { !tapped.switchedByTarget && !tapped.switchedPulledBack }?.let { return@acting UnseenField.tapSwitched(it) }
+        if (focusedEditable() != null) return@acting clearText(null, null)
         clearUnseen(atPoint = true)
     }
 
@@ -582,7 +601,7 @@ class AndroidScreen(
     /** 和 [typeUnseen] 同样的前提;全选后按删除键,没弹输入法而界面一点没变时请模型先点输入框([UnseenField.cleared])。 */
     private suspend fun clearUnseen(atPoint: Boolean = false): ActionResult {
         val keyboardUp = imeBox() != null
-        val r = verified { ctrlKey(KeyEvent.KEYCODE_A) && shell.injectKey(displayId, KeyEvent.KEYCODE_DEL) }
+        val r = verified(opensApps = false) { ctrlKey(KeyEvent.KEYCODE_A) && shell.injectKey(displayId, KeyEvent.KEYCODE_DEL) }
         return UnseenField.cleared(r, keyboardUp, atPoint)
     }
 
@@ -610,16 +629,18 @@ class AndroidScreen(
         open(packageName, userId.takeIf { it != myUser }, cold)
 
     /** [openApp] / [openAppCopy] 的共同部分;[user] 为空是本来那份。 */
-    private suspend fun open(packageName: String, user: Int?, cold: Boolean): ActionResult = withContext(Dispatchers.IO) {
+    private suspend fun open(packageName: String, user: Int?, cold: Boolean): ActionResult = acting {
         // 同一个 App 不能同时在两块屏上:系统会把整个任务挪过来,等于从另一个任务手里抢走它。装了两份的,两份各算各的
         if (checkOtherTasks) {
             val other = runCatching { if (user == null) shell.displayOfPackage(packageName) else shell.displayOfPackageInUser(packageName, user) }.getOrDefault(-1)
-            if (other >= 0 && other != display.current?.displayId) return@withContext IN_USE_BY_OTHER
-            if (!(if (user == null) reserve(packageName) else reserveCopy(packageName, user))) return@withContext IN_USE_BY_OTHER
+            if (other >= 0 && other != display.current?.displayId) return@acting IN_USE_BY_OTHER
+            if (!(if (user == null) reserve(packageName) else reserveCopy(packageName, user))) return@acting IN_USE_BY_OTHER
         }
         // 打开前最上面的窗口:之后冒出来的才可能是这次打开引起的选择框(上次没选、又打开一次时还是同一个选择框)
         val before = if (opened) topWindowPackage().takeIf { it != chooserPackage } else null
         val id = display.get().displayId
+        // 打开 App 也可能顺带在用户屏上开出别的(有的 App 一启动就拉起另一个):照样盯着
+        val w = armSpillWatch()
         fun launch() = when {
             user != null -> shell.startAppInUser(id, packageName, user, cold)
             cold -> shell.restartApp(id, packageName)
@@ -633,35 +654,36 @@ class AndroidScreen(
         }
         when (code) {
             ShellService.START_OK, ShellService.START_OK_COLD_IGNORED -> Unit
-            ShellService.START_IN_USE_ON_MAIN -> return@withContext ActionResult.Failed("app_in_use_by_user")
-            ShellService.START_IN_USE_BY_OTHER -> return@withContext IN_USE_BY_OTHER
-            ShellService.START_NOT_FOUND -> return@withContext ActionResult.Failed("app_not_found")
-            ShellService.START_USER_NOT_ALLOWED -> return@withContext ActionResult.Failed(COPY_NOT_FOUND)
-            else -> return@withContext ActionResult.Failed("launch_failed")
+            ShellService.START_IN_USE_ON_MAIN -> return@acting ActionResult.Failed("app_in_use_by_user")
+            ShellService.START_IN_USE_BY_OTHER -> return@acting IN_USE_BY_OTHER
+            ShellService.START_NOT_FOUND -> return@acting ActionResult.Failed("app_not_found")
+            ShellService.START_USER_NOT_ALLOWED -> return@acting ActionResult.Failed(COPY_NOT_FOUND)
+            else -> return@acting ActionResult.Failed("launch_failed")
         }
-        awaitOpened(packageName, before, hint = if (code == ShellService.START_OK_COLD_IGNORED) HINT_COLD_IGNORED else null, user = user)
+        withSpill(w, awaitOpened(packageName, before, hint = if (code == ShellService.START_OK_COLD_IGNORED) HINT_COLD_IGNORED else null, user = user))
     }
 
     /**
      * 把文字分享给 [packageName]:和 [openApp] 一样第一次用时才建屏、用户正在主屏用它时不打开,打开后同样等它到前台、
      * 认系统问打开哪一个。这个 App 不收文字分享为 cannot_share。只打开分享页,发不发由模型在那一页上点。
      */
-    override suspend fun shareText(packageName: String, text: String): ActionResult = withContext(Dispatchers.IO) {
+    override suspend fun shareText(packageName: String, text: String): ActionResult = acting {
         if (checkOtherTasks) {
             val other = runCatching { shell.displayOfPackage(packageName) }.getOrDefault(-1)
-            if (other >= 0 && other != display.current?.displayId) return@withContext IN_USE_BY_OTHER
-            if (!reserve(packageName)) return@withContext IN_USE_BY_OTHER
+            if (other >= 0 && other != display.current?.displayId) return@acting IN_USE_BY_OTHER
+            if (!reserve(packageName)) return@acting IN_USE_BY_OTHER
         }
         val before = if (opened) topWindowPackage().takeIf { it != chooserPackage } else null
         val id = display.get().displayId
+        val w = armSpillWatch()
         when (runCatching { shell.startShare(id, packageName, text) }.getOrDefault(ShellService.START_ERROR)) {
             ShellService.START_OK -> Unit
-            ShellService.START_IN_USE_ON_MAIN -> return@withContext ActionResult.Failed("app_in_use_by_user")
-            ShellService.START_IN_USE_BY_OTHER -> return@withContext IN_USE_BY_OTHER
-            ShellService.START_UNRESOLVED -> return@withContext ActionResult.Failed("cannot_share")
-            else -> return@withContext ActionResult.Failed("launch_failed")
+            ShellService.START_IN_USE_ON_MAIN -> return@acting ActionResult.Failed("app_in_use_by_user")
+            ShellService.START_IN_USE_BY_OTHER -> return@acting IN_USE_BY_OTHER
+            ShellService.START_UNRESOLVED -> return@acting ActionResult.Failed("cannot_share")
+            else -> return@acting ActionResult.Failed("launch_failed")
         }
-        awaitOpened(packageName, before, hint = null, sharing = true)
+        withSpill(w, awaitOpened(packageName, before, hint = null, sharing = true))
     }
 
     /**
@@ -712,12 +734,12 @@ class AndroidScreen(
             if (profiles == null) otherProfiles()
             val choice = chooserOf(packageName, before) ?: first
             chooserPackage = choice.packageName
-            return ok().copy(chooser = choice, appSwitched = null, switchedByTarget = false)
+            return ok().copy(chooser = choice, appSwitched = null, switchedByTarget = false, switchedPulledBack = false)
         }
         // 分享时系统问用这个 App 的哪个分享页:同样算打开了,等模型选
         if (!onTop) picker()?.let { pkg ->
             chooserPackage = pkg
-            return ok(hint = HINT_SHARE_PICKER).copy(appSwitched = null, switchedByTarget = false)
+            return ok(hint = HINT_SHARE_PICKER).copy(appSwitched = null, switchedByTarget = false, switchedPulledBack = false)
         }
         // 没打开就照实说,并说清此刻最上面的是什么,不报成功
         if (!onTop) {
@@ -728,7 +750,7 @@ class AndroidScreen(
         }
         // 打开了,但另一个包的窗口盖在上面(权限弹窗、账号选择器):照实说是谁,仍算打开了
         val cover = ScreenReader.topPackage(windows())?.takeIf { it != packageName }
-        return ok(hint = hint).let { if (cover != null) it.copy(coveredBy = cover, appSwitched = null, switchedByTarget = false) else it }
+        return ok(hint = hint).let { if (cover != null) it.copy(coveredBy = cover, appSwitched = null, switchedByTarget = false, switchedPulledBack = false) else it }
     }
 
     /**
@@ -798,19 +820,20 @@ class AndroidScreen(
      * 打开链接或设置页。和 [openApp] 一样第一次用时才建屏;用户在主屏用着那个 App 时不打开。
      * 设置页预期落在系统设置所在的包,指定了 App 的落在那个 App;落到别处(系统选择器、跳转页)照样成功,带提示。
      */
-    override suspend fun openLink(action: String?, uri: String?, packageName: String?): ActionResult = withContext(Dispatchers.IO) {
+    override suspend fun openLink(action: String?, uri: String?, packageName: String?): ActionResult = acting {
         val id = display.get().displayId
         val expected = packageName ?: settingsPackage.takeIf { action != null }
-        if (checkOtherTasks && expected != null && !reserve(expected)) return@withContext IN_USE_BY_OTHER
+        if (checkOtherTasks && expected != null && !reserve(expected)) return@acting IN_USE_BY_OTHER
         val before = ScreenReader.topPackage(windows())
         val beforeTree = treeHash()
+        val w = armSpillWatch()
         when (shell.startView(id, action, uri, packageName)) {
             ShellService.START_OK -> Unit
-            ShellService.START_IN_USE_ON_MAIN -> return@withContext ActionResult.Failed("app_in_use_by_user")
-            ShellService.START_IN_USE_BY_OTHER -> return@withContext IN_USE_BY_OTHER
-            ShellService.START_UNRESOLVED -> return@withContext ActionResult.Failed("link_unresolved")
-            ShellService.START_INVALID_LINK -> return@withContext ActionResult.Failed("invalid_link")
-            else -> return@withContext ActionResult.Failed("launch_failed")
+            ShellService.START_IN_USE_ON_MAIN -> return@acting ActionResult.Failed("app_in_use_by_user")
+            ShellService.START_IN_USE_BY_OTHER -> return@acting IN_USE_BY_OTHER
+            ShellService.START_UNRESOLVED -> return@acting ActionResult.Failed("link_unresolved")
+            ShellService.START_INVALID_LINK -> return@acting ActionResult.Failed("invalid_link")
+            else -> return@acting ActionResult.Failed("launch_failed")
         }
         fun landed(): Boolean {
             val top = ScreenReader.topPackage(windows())
@@ -830,7 +853,13 @@ class AndroidScreen(
             val task = shell.topTaskId(displayId)
             _target.value = TargetApp(opened, task, userOf(task))
         }
-        ok(hint = if (expected != null && top != expected) hintLinkElsewhere(top, expected) else null)
+        ok(hint = if (expected != null && top != expected) hintLinkElsewhere(top, expected) else null, spill = takeSpill(w))
+    }
+
+    /** 打开、分享之后:这段时间里开到用户屏上的照常处理,并报在成功的结果里(失败的只处理不报)。 */
+    private suspend fun withSpill(w: Watch?, r: ActionResult): ActionResult {
+        val spill = takeSpill(w) ?: return r
+        return if (r is ActionResult.Ok) r.copy(opened = spill.opened, chooser = r.chooser ?: spill.chooser) else r
     }
 
     private fun hintLinkElsewhere(top: String?, expected: String) =
@@ -857,7 +886,7 @@ class AndroidScreen(
      * 有几个时按 [SystemIntents.choose] 直接指定一个。再交给内置助手启动到 Mika 的屏(第一次用时建屏),动作前后照常盯着主屏。
      * 闹钟、计时器本该悄悄设好:之后读系统的下一个闹钟核对;App 却开了界面时照实报。闹钟列表、新日程要等那个 App 到最上面。
      */
-    override suspend fun systemAction(action: SystemAction): SystemActionResult = withContext(Dispatchers.IO) {
+    override suspend fun systemAction(action: SystemAction): SystemActionResult = acting {
         val intent = SystemIntents.toIntent(SystemIntents.spec(action))
         val pm = a11y.packageManager
         val handlers = runCatching {
@@ -867,10 +896,10 @@ class AndroidScreen(
         }.getOrDefault(emptyList())
         val default = runCatching { pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName }.getOrNull()
         val handler = SystemIntents.choose(handlers, default)
-            ?: return@withContext SystemActionResult(ActionResult.Failed(SystemActionResult.NOT_SUPPORTED))
+            ?: return@acting SystemActionResult(ActionResult.Failed(SystemActionResult.NOT_SUPPORTED))
         val pkg = handler.packageName
         intent.component = android.content.ComponentName(pkg, handler.className)
-        if (checkOtherTasks && !action.silent && !reserve(pkg)) return@withContext SystemActionResult(IN_USE_BY_OTHER, pkg)
+        if (checkOtherTasks && !action.silent && !reserve(pkg)) return@acting SystemActionResult(IN_USE_BY_OTHER, pkg)
         val alarms = a11y.getSystemService(AlarmManager::class.java)
         val alarmBefore = runCatching { alarms?.nextAlarmClock?.triggerTime }
         val id = display.get().displayId
@@ -880,10 +909,10 @@ class AndroidScreen(
         val asMika = PendingIntent.getActivity(a11y, SYSTEM_ACTION_REQUEST, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         when (runCatching { shell.startSystemAction(id, intent, asMika) }.getOrDefault(ShellService.START_ERROR)) {
             ShellService.START_OK -> Unit
-            ShellService.START_IN_USE_ON_MAIN -> return@withContext SystemActionResult(ActionResult.Failed("app_in_use_by_user"), pkg)
-            ShellService.START_IN_USE_BY_OTHER -> return@withContext SystemActionResult(IN_USE_BY_OTHER, pkg)
-            ShellService.START_UNRESOLVED -> return@withContext SystemActionResult(ActionResult.Failed(SystemActionResult.NOT_SUPPORTED))
-            else -> return@withContext SystemActionResult(ActionResult.Failed("launch_failed"), pkg)
+            ShellService.START_IN_USE_ON_MAIN -> return@acting SystemActionResult(ActionResult.Failed("app_in_use_by_user"), pkg)
+            ShellService.START_IN_USE_BY_OTHER -> return@acting SystemActionResult(IN_USE_BY_OTHER, pkg)
+            ShellService.START_UNRESOLVED -> return@acting SystemActionResult(ActionResult.Failed(SystemActionResult.NOT_SUPPORTED))
+            else -> return@acting SystemActionResult(ActionResult.Failed("launch_failed"), pkg)
         }
         fun top() = ScreenReader.topPackage(windows())
         var alarmAfter = alarmBefore.getOrNull()
@@ -921,9 +950,9 @@ class AndroidScreen(
 
     // ---------- 滚轮 ----------
 
-    override suspend fun setWheel(ref: String, snapshotId: String, value: String): WheelOutcome = withContext(Dispatchers.IO) {
-        if (!opened) return@withContext WheelOutcome(false, null, null, 0, "none", error = "no_app_open")
-        val (node, _) = resolve(ref, snapshotId) ?: return@withContext WheelOutcome(false, null, null, 0, "none", error = "ref_expired")
+    override suspend fun setWheel(ref: String, snapshotId: String, value: String): WheelOutcome = acting {
+        if (!opened) return@acting WheelOutcome(false, null, null, 0, "none", error = "no_app_open")
+        val (node, _) = resolve(ref, snapshotId) ?: return@acting WheelOutcome(false, null, null, 0, "none", error = "ref_expired")
         val driver = WheelDriver(
             display.width, display.height,
             quiet = { q, cap -> withEventClock { it.awaitQuiet(q, cap) } },
@@ -1008,12 +1037,14 @@ class AndroidScreen(
     /**
      * 执行动作,等界面安静后比对前后指纹;再看前台有没有被切走。动作前后盯着主屏:动作让 App 开到了用户主屏上就挪回来,
      * 结果里报 opened(见 [takeSpill])。上一个动作过了一会儿才开到主屏上的,这一个动作不做,先说屏幕变了。
+     * 只有可能打开 App 的动作([opensApps]:点按、回车)才盯主屏;滚动、滑动、返回、清空不盯,
+     * 这段时间里用户在自己屏上切 App 就不会被当成动作开出来的。
      */
-    private suspend fun verified(relocatedTo: String? = null, action: suspend () -> Boolean): ActionResult {
+    private suspend fun verified(relocatedTo: String? = null, opensApps: Boolean = true, action: suspend () -> Boolean): ActionResult {
         lateSpill()?.let { return ActionResult.Failed("opened_elsewhere", hintLateSpill(it.opened)) }
         val beforeTree = treeHash()
         val beforeFrame = frameSignature()
-        val w = armSpillWatch()
+        val w = if (opensApps) armSpillWatch() else null
         val changed = withEventClock { clock ->
             clock.mark()
             if (action()) awaitChange(clock, beforeTree, beforeFrame) else null
@@ -1040,6 +1071,18 @@ class AndroidScreen(
 
     /** 从用户主屏挪回 Mika 屏上的任务,和从它们里面打开的:它们在最上面算目标 App 打开的,不算被切走。 */
     private val adopted: MutableSet<Int> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** 这次运行挪回来过哪些 App:每个 App 最多挪一次,离开过 Mika 屏的、「别动这些 App」里的不挪(见 [PullBackLedger])。 */
+    private val ledger = PullBackLedger(leaveAlone)
+
+    /** 看着 Mika 屏上有没有不该在这里的 App(见 [AgentScreenGuard]、[returnIntruder])。 */
+    private val guard = AgentScreenGuard()
+
+    /** 送回了用户主屏、还没告诉模型的 App(包名);下一个动作的结果里报。 */
+    private val returned = java.util.concurrent.ConcurrentLinkedQueue<String>()
+
+    /** Mika 最近一次自己挪动任务的时刻:那之后一小会儿桌面的窗口变化是挪出来的,不算用户动手。 */
+    @Volatile private var ownMoveAt = Long.MIN_VALUE / 2
 
     /**
      * 系统在用户主屏上问打开哪一个、等用户选的那一次:[taskId] 问的那个窗口的任务,[packageName] 它的包,[app] 问的是哪个 App,
@@ -1068,10 +1111,12 @@ class AndroidScreen(
     @Volatile private var tapWatchUntil = 0L
 
     /** 不算开到主屏上的:Mika 自己、桌面 App(按 HOME 解析,不写死)。 */
-    private val notSpills: Set<String> by lazy {
+    private val notSpills: Set<String> by lazy { launchers + a11y.packageName }
+
+    /** 桌面 App(按 HOME 解析)。 */
+    private val launchers: Set<String> by lazy {
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-        runCatching { a11y.packageManager.queryIntentActivities(home, 0).map { it.activityInfo.packageName } }.getOrDefault(emptyList())
-            .toSet() + a11y.packageName
+        runCatching { a11y.packageManager.queryIntentActivities(home, 0).map { it.activityInfo.packageName } }.getOrDefault(emptyList()).toSet()
     }
 
     /** 动作之前:请内置助手盯着主屏,记下此刻两块屏最上面的任务;没有屏、接管中或助手不支持时为 null(不盯)。 */
@@ -1091,9 +1136,12 @@ class AndroidScreen(
         tapWatch = spillScope.launch(start = CoroutineStart.UNDISPATCHED) {
             val collecting = launch(start = CoroutineStart.UNDISPATCHED) {
                 a11y.eventsFor(Display.DEFAULT_DISPLAY).collect { e ->
-                    if ((e.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED || e.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED) &&
-                        e.packageName?.toString() != a11y.packageName
-                    ) {
+                    val pkg = e.packageName?.toString()
+                    val clicked = e.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED || e.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED
+                    // 回桌面、开最近任务、下拉通知栏:桌面或系统界面的窗口换了,也算用户在动手(Mika 自己刚挪过任务的那一下除外)
+                    val userMoved = e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null &&
+                        (pkg in launchers || pkg == SYSTEM_UI) && SystemClock.uptimeMillis() - ownMoveAt > OWN_MOVE_QUIET_MS
+                    if ((clicked || userMoved) && pkg != a11y.packageName) {
                         userTaps.addLast(MainScreenSpill.Tap(SystemClock.uptimeMillis(), e.packageName?.toString()))
                         while (userTaps.size > MAX_USER_TAPS) userTaps.pollFirst()
                     }
@@ -1118,7 +1166,9 @@ class AndroidScreen(
         val arrivals = parseArrivals(b)
         arrivals.maxOfOrNull { it.at }?.let { consumed = maxOf(consumed, it) }
         var last: Spill? = null
-        for (v in MainScreenSpill.decide(arrivals, w.since, SPILL_WINDOW_MS, w.topBefore, notSpills, userTaps.toList())) {
+        val verdicts = MainScreenSpill.decide(arrivals, w.since, SPILL_WINDOW_MS, w.topBefore, notSpills, userTaps.toList(), backgroundWindowMs = BACKGROUND_WINDOW_MS)
+        // 挪过一次的、离开过 Mika 屏的、「别动这些 App」里的:只报不挪
+        for (v in verdicts.map(ledger::limit)) {
             val a = v.arrival
             val pkg = a.packageName ?: continue
             last = when (v) {
@@ -1129,6 +1179,47 @@ class AndroidScreen(
         }
         if (last != null) Log.i(TAG, "opened on the main screen after an action: ${last.opened}")
         return last
+    }
+
+    /** 取出送回了用户主屏、还没告诉模型的 App。 */
+    private fun drainReturned(): List<String> = generateSequence { returned.poll() }.toList()
+
+    /** 挪回来过的 [packageName] 的任务离开了 Mika 的屏(用户拿回去了):这次运行不再挪它。 */
+    fun leftAgentScreen(packageName: String) = ledger.left(packageName)
+
+    /**
+     * 看一眼 Mika 屏最上面:是不该在这里的 App(不是目标、不是挪回来的、不是系统选择器、动作前后也没见过,
+     * 或是「别动这些 App」里的)就把它的任务送回用户的主屏,不结束它;下一个动作的结果里告诉模型。返回送走的包,没送为 null。
+     * 动作进行中、刚做完的 [AgentScreenGuard.QUIET_MS] 内、接管中、等用户在主屏上选时不看。
+     * 顺带:挪回来过的任务已不在 Mika 屏上的,记为离开过,不再挪它。
+     */
+    suspend fun returnIntruder(): String? = withContext(Dispatchers.IO) {
+        if (!opened || handedOver() || _userPick.value != null) return@withContext null
+        val here = displayId
+        for ((pkg, task) in ledger.watched()) {
+            val d = runCatching { shell.displayOfTask(task) }.getOrDefault(-1)
+            if (d >= 0 && d != here) ledger.left(pkg)
+        }
+        val task = runCatching { shell.topTaskId(here) }.getOrDefault(-1)
+        if (task < 0) return@withContext null
+        val pkg = runCatching { shell.packageOfTask(task) }.getOrNull()
+        val allowed = systemPickers + notSpills + setOfNotNull(settingsPackage, chooserPackage, PLAY_SERVICES)
+        val target = _target.value
+        val bad = guard.intruder(
+            SystemClock.uptimeMillis(), AgentScreenGuard.Top(task, pkg), target?.taskId ?: -1, targetPackage,
+            adopted.toSet(), allowed, leaveAlone(),
+        )
+        if (!bad || pkg == null) return@withContext null
+        ownMoveAt = SystemClock.uptimeMillis()
+        if (!runCatching { shell.moveTask(task, Display.DEFAULT_DISPLAY) }.getOrDefault(false)) {
+            Log.w(TAG, "could not return task $task ($pkg) to the main screen")
+            return@withContext null
+        }
+        guard.forget(task)
+        adopted -= task
+        returned += pkg
+        Log.i(TAG, "returned $pkg (task $task) from Mika's screen to the main screen")
+        pkg
     }
 
     /**
@@ -1202,11 +1293,16 @@ class AndroidScreen(
 
     /** 把开到主屏上的任务挪到 Mika 的屏(只挪,不替它重新打开),等它到最上面;挪不动为 null。 */
     private suspend fun pullBack(a: MainScreenSpill.Arrival, pkg: String, byUser: Boolean = false): Spill? {
+        // 先记下再挪:挪过来的那一刻 [returnIntruder] 不把它当成不该在这里的
+        val known = a.taskId in adopted
+        adopted += a.taskId
+        ownMoveAt = SystemClock.uptimeMillis()
         if (!runCatching { shell.moveTask(a.taskId, displayId) }.getOrDefault(false)) {
+            if (!known) adopted -= a.taskId
             Log.w(TAG, "could not move task ${a.taskId} ($pkg) from the main screen")
             return null
         }
-        adopted += a.taskId
+        ledger.pulled(pkg, a.taskId)
         // 事先不知道会开出哪个 App:挪回来后再占;占不到也不撤回
         if (checkOtherTasks) reserve(pkg)
         val deadline = SystemClock.uptimeMillis() + LAUNCH_WAIT_MS
@@ -1353,7 +1449,8 @@ class AndroidScreen(
             o.byUser -> "$name needed the user; they handled it on their own screen and tapped continue. It is now in front on Mika's screen. Observe before acting."
             o.needsUser && o.onUserScreen -> "It was $name: a popup on the user's screen that needs them (a sign-in, verification or confirmation step). " +
                 "It was left there on purpose; do not repeat the action. Call hand_to_user so they can finish it, then observe before acting."
-            o.pulledBack -> "It was $name, now in front on Mika's screen.$copy Observe before acting."
+            o.pulledBack -> "It was $name: it came up on the user's screen and was moved to Mika's screen, where it is now in front.$copy " +
+                "It was not necessarily opened by the app this task is working in. Observe before acting; if it is not part of the task, go back."
             else -> "It was $name, which the user is using on their own screen, so it was left there. " +
                 "Do not repeat the previous action: call hand_to_user with reason other so the user can do that step there, or wait and try again later."
         }
@@ -1376,10 +1473,14 @@ class AndroidScreen(
         return AppSwitch.switchedTo(
             targetPackage,
             ScreenReader.topPackage(windows()),
-            // 从用户主屏挪回来的(及从它们里面打开的)也是目标 App 这一路打开的
             sameTask = {
                 val top = runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
-                top >= 0 && (target != null && target.taskId == top || top in adopted)
+                top >= 0 && target != null && target.taskId == top
+            },
+            // 从用户主屏挪回来的(及从它们里面打开的)不一定是目标 App 打开的:单独报,不说成目标 App 打开的
+            pulledBackTask = {
+                val top = runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
+                top >= 0 && top in adopted
             },
             partOfTask = chooserPackage?.let { systemPickers + it } ?: systemPickers,
             settingsPage = { it == settingsPackage },
@@ -1419,7 +1520,8 @@ class AndroidScreen(
         val profile = adopted ?: inProfile ?: shown?.first
         val sw = switchedTo()
         return ActionResult.Ok(
-            changed = changed, appSwitched = sw?.packageName, switchedByTarget = sw?.byTarget == true,
+            changed = changed, appSwitched = sw?.packageName, switchedByTarget = sw?.byTarget == true, switchedPulledBack = sw?.pulledBack == true,
+            returnedToUser = drainReturned(),
             relocated = relocatedTo != null, relocatedTo = relocatedTo, verification = verification, hint = hint, secret = secret,
             chooser = spill?.chooser, opened = spill?.opened, inProfile = profile,
             profileUser = shown?.second, requestedUser = requestedUser.takeIf { shown != null },
@@ -1718,6 +1820,15 @@ class AndroidScreen(
         const val TAG = "MikaScreen"
         /** 动作开始后多久之内主屏冒出来的任务算这个动作开出来的。 */
         const val SPILL_WINDOW_MS = 6_000L
+        /** 用户主屏后台本来就有的任务被拉到前台:只认动作开始后这么久之内的,更晚的多半是用户自己切过去的。 */
+        const val BACKGROUND_WINDOW_MS = 2_000L
+        /** Mika 自己挪过任务之后这么久之内,桌面、系统界面的窗口变化不算用户动手。 */
+        const val OWN_MOVE_QUIET_MS = 800L
+        const val SYSTEM_UI = "com.android.systemui"
+        /** 可能打开别的 App 的按键:回车、确认。 */
+        val OPENING_KEYS = setOf(KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER)
+        /** 别的 App 叫起来的系统账号、登录框所在的包:出现在 Mika 屏上不算不该在这里。 */
+        const val PLAY_SERVICES = "com.google.android.gms"
         /**
          * 窗口的宽、高都至少有主屏的这么多才算整屏的页面;比这小的是对话框、底部弹层一类。
          * 留得宽一些:状态栏、导航栏、挖孔会让整屏 App 的窗口也比屏小一截,横屏时导航栏还在侧边。

@@ -2,14 +2,18 @@ package com.wangzan101.mika.cap.phone.a11y
 
 /** 前台换成了别的包,算不算「被切走」。 */
 internal object AppSwitch {
-    /** [byTarget]:新前台在目标 App 自己的任务里,是它打开的(如分享到另一个 App),措辞上不当成打断。 */
-    data class Switch(val packageName: String, val byTarget: Boolean)
+    /**
+     * [byTarget]:新前台在目标 App 自己的任务里,是它打开的(如分享到另一个 App),措辞上不当成打断。
+     * [pulledBack]:新前台是从用户主屏挪回来的任务(或从它里面打开的),不一定是目标 App 打开的,措辞上单独说。
+     */
+    data class Switch(val packageName: String, val byTarget: Boolean, val pulledBack: Boolean = false)
 
     /**
      * 不算被切走:系统的选择器、文件/照片选择器、权限框([partOfTask]),以及目标 App 在自己的任务里
      * 打开的系统设置页面([settingsPage],如由系统设置提供的城市选择页)。目标任务里的其他 App
      * (包括预装的浏览器、应用商店)仍报,但标 byTarget。
      * [sameTask] 只在包名不同、又不是选择器时才查。
+     * 最上面是从用户主屏挪回来的任务([pulledBackTask])时报成 pulledBack,不说成目标 App 打开的。
      * 包名相同时只看 [otherCopy]:同一个 App 装了两份(分身、工作资料),最上面换成了不是目标的那一份,也算被切走。
      */
     fun switchedTo(
@@ -19,10 +23,11 @@ internal object AppSwitch {
         partOfTask: Set<String>,
         settingsPage: (String) -> Boolean,
         otherCopy: () -> Boolean = { false },
+        pulledBackTask: () -> Boolean = { false },
     ): Switch? {
         if (target != null && current == target) return if (otherCopy()) Switch(current, byTarget = false) else null
         if (target == null || current == null || current in partOfTask) return null
-        if (!sameTask()) return Switch(current, byTarget = false)
+        if (!sameTask()) return Switch(current, byTarget = false, pulledBack = pulledBackTask())
         return if (settingsPage(current)) null else Switch(current, byTarget = true)
     }
 }
