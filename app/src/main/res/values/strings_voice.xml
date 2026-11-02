@@ -46,4 +46,25 @@
     <string name="voice_error_network">No connection to the speech service.</string>
     <string name="voice_error_server">The speech service had a problem. Try again later.</string>
     <string name="voice_error_unavailable">Voice input isn\'t working right now.</string>
+    <string name="voice_model_parakeet">Parakeet v3 model</string>
+    <string name="voice_model_absent">Not downloaded · %1$s</string>
+    <string name="voice_model_downloading">%1$s of %2$s</string>
+    <string name="voice_model_paused">Paused · %1$s</string>
+    <string name="voice_model_verifying">Checking the download…</string>
+    <string name="voice_model_unpacking">Unpacking…</string>
+    <string name="voice_model_ready">Downloaded · %1$s · runs on this phone</string>
+    <string name="voice_model_failed_network">The download stopped. Check the connection and tap Resume.</string>
+    <string name="voice_model_failed_checksum">A downloaded file was damaged and has been deleted. Tap to download it again.</string>
+    <string name="voice_model_failed_wifi">Waiting for Wi-Fi. Connect to Wi-Fi or turn off “Download on Wi-Fi only”.</string>
+    <string name="voice_model_failed_storage">Not enough free space. The model needs about %1$s.</string>
+    <string name="voice_model_failed_other">The download failed. Try again later.</string>
+    <string name="voice_model_download">Download</string>
+    <string name="voice_model_resume">Resume</string>
+    <string name="voice_model_cancel">Pause</string>
+    <string name="voice_model_remove">Remove</string>
+    <string name="voice_model_license">Model license: %1$s</string>
+    <string name="voice_model_unsupported">Needs a 64-bit ARM phone</string>
+    <string name="voice_model_needed">Download first</string>
+    <string name="voice_model_mobile_warning">You\'re not on Wi-Fi. Downloading uses %1$s of mobile data.</string>
+    <string name="voice_error_model">The Parakeet model is missing or damaged. Download it again in Settings › Voice.</string>
 </resources>

@@ -12,14 +12,14 @@ import kotlin.coroutines.coroutineContext
 
 /**
  * 用 AudioRecord 录一段 16 kHz、单声道、16 位的话,交给云端或本机识别。
- * 每 20 毫秒一帧问一次 [EndOfSpeechGate];门说停、[stop] 返回 true(用户点了「说完了」)或协程被取消时收尾。
+ * 每 20 毫秒一帧问一次 [SpeechGate];门说停、[stop] 返回 true(用户点了「说完了」)或协程被取消时收尾。
  * 调用方要先确认有麦克风权限。
  */
 class AudioCapture(private val sampleRate: Int = SAMPLE_RATE) {
     class Recording(val pcm: ShortArray, val heardSpeech: Boolean)
 
     @SuppressLint("MissingPermission")
-    suspend fun record(gate: EndOfSpeechGate, stop: () -> Boolean): Recording = withContext(Dispatchers.IO) {
+    suspend fun record(gate: SpeechGate, stop: () -> Boolean): Recording = withContext(Dispatchers.IO) {
         val minBuf = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         if (minBuf <= 0) throw VoiceError.Unavailable("audio")
         val frame = ShortArray(sampleRate / 50)

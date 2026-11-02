@@ -185,7 +185,9 @@ fun SettingsScreen(
             operatingPace = operatingPace, onOperatingPace = { flags.setOperatingPace(it); operatingPace = it },
         )
         SettingsPage.Language -> LanguageScreen(language, onLanguage = { AppLanguage.set(context, it) }, onBack = toHome)
-        SettingsPage.Voice -> VoiceScreen((context.applicationContext as com.wangzan101.mika.MikaApp).voice, onBack = toHome)
+        SettingsPage.Voice -> (context.applicationContext as com.wangzan101.mika.MikaApp).let { app ->
+            VoiceScreen(app.voice, app.voiceEngines, onBack = toHome)
+        }
         SettingsPage.Capsule -> CapsuleScreen(capsuleMode, onMode = { flags.setCapsuleMode(it); capsuleMode = it }, onBack = toHome)
         // 没有数据时首页不显示入口,走不到这一页
         SettingsPage.WebSites -> webSites?.let { WebSitesScreen(it, onBack = toHome) }

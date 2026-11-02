@@ -40,7 +40,12 @@ object VoiceCopy {
         is VoiceError.QuotaExceeded -> tr(R.string.voice_error_quota)
         is VoiceError.Network -> tr(R.string.voice_error_network)
         is VoiceError.Server, is VoiceError.BadResponse -> tr(R.string.voice_error_server)
-        is VoiceError.Unavailable -> if (e.message == "permission") tr(R.string.voice_need_mic) else tr(R.string.voice_error_unavailable)
+        is VoiceError.Unavailable -> when (e.message) {
+            "permission" -> tr(R.string.voice_need_mic)
+            "model" -> tr(R.string.voice_error_model)
+            "native" -> tr(R.string.voice_model_unsupported)
+            else -> tr(R.string.voice_error_unavailable)
+        }
     }
 }
 

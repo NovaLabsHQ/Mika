@@ -46,4 +46,25 @@
     <string name="voice_error_network">連不上語音服務。</string>
     <string name="voice_error_server">語音服務出了問題，稍後再試。</string>
     <string name="voice_error_unavailable">語音輸入現在用不了。</string>
+    <string name="voice_model_parakeet">Parakeet v3 模型</string>
+    <string name="voice_model_absent">未下載 · %1$s</string>
+    <string name="voice_model_downloading">%1$s / %2$s</string>
+    <string name="voice_model_paused">已暫停 · %1$s</string>
+    <string name="voice_model_verifying">正在核對下載的檔案…</string>
+    <string name="voice_model_unpacking">正在解包…</string>
+    <string name="voice_model_ready">已下載 · %1$s · 在本機執行</string>
+    <string name="voice_model_failed_network">下載中斷了。檢查網路後點「繼續下載」。</string>
+    <string name="voice_model_failed_checksum">有個檔案下載損壞，已刪除。點一下重新下載。</string>
+    <string name="voice_model_failed_wifi">正在等 Wi-Fi。連上 Wi-Fi，或關閉「只在 Wi-Fi 下下載」。</string>
+    <string name="voice_model_failed_storage">剩餘空間不足，模型大約需要 %1$s。</string>
+    <string name="voice_model_failed_other">下載失敗了，稍後再試。</string>
+    <string name="voice_model_download">下載</string>
+    <string name="voice_model_resume">繼續下載</string>
+    <string name="voice_model_cancel">暫停</string>
+    <string name="voice_model_remove">刪除</string>
+    <string name="voice_model_license">模型授權：%1$s</string>
+    <string name="voice_model_unsupported">需要 64 位元 ARM 手機</string>
+    <string name="voice_model_needed">先下載模型</string>
+    <string name="voice_model_mobile_warning">目前沒連 Wi-Fi，下載會用掉 %1$s 行動數據。</string>
+    <string name="voice_error_model">Parakeet 模型缺檔案或已損壞，請在 設定 › 語音 裡重新下載。</string>
 </resources>

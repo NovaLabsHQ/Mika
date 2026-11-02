@@ -103,6 +103,8 @@ dependencies {
     implementation(libs.xz)
     // sherpa-onnx(本机语音识别、朗读),没下载时 checkSherpaOnnx 让构建停下
     implementation(files(sherpaOnnxAar))
+    // 解 .tar.bz2 的模型包(Supertonic 3 之类)
+    implementation(libs.commons.compress)
     implementation(libs.commonmark)
     implementation(libs.commonmark.ext.gfm.tables)
     implementation(libs.commonmark.ext.gfm.strikethrough)

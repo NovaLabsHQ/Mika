@@ -1,55 +1,107 @@
 package com.wangzan101.mika.core.voice
 
 /**
- * 一个要下载的本机语音模型:从 [url] 下一个压缩包,大小 [downloadBytes]、SHA-256 是 [sha256](下完核对,对不上就删掉),
- * 解开后的目录名 [dirName]。[license] 是模型权重的许可,界面在下载前写明。
+ * 模型里要下载的一个文件:从 [url] 下载,大小 [bytes]、SHA-256 是 [sha256](下完核对,对不上就删掉)。
+ * [name] 是放进模型目录后的文件名;[unpack] 为真时它是个 .tar.bz2,核对后解进模型目录(去掉包里最外一层目录)、再删掉压缩包。
+ */
+data class ModelFile(
+    val name: String,
+    val url: String,
+    val sha256: String,
+    val bytes: Long,
+    val unpack: Boolean = false,
+) {
+    init {
+        require(url.startsWith("https://")) { "模型只从 HTTPS 地址下载" }
+        require(Regex("[0-9a-f]{64}").matches(sha256)) { "SHA-256 要写成 64 位小写十六进制" }
+        require(bytes > 0) { "大小要写明" }
+        require(Regex("[A-Za-z0-9._-]+").matches(name) && name != "." && name != ".." && !name.startsWith(".")) { "文件名不能带路径" }
+        require(!unpack || name.endsWith(".tar.bz2")) { "只解 .tar.bz2" }
+    }
+}
+
+/**
+ * 一个要下载的本机语音模型:[files] 一个个下载、核对,放进本机的模型目录 `voice/<[id]>/`;
+ * [license] 是模型权重的许可,界面在下载前写明。
  */
 data class ModelSpec(
     val engine: VoiceEngineId,
-    val url: String,
-    val sha256: String,
-    val downloadBytes: Long,
-    val dirName: String,
+    val id: String,
+    val files: List<ModelFile>,
     val license: String,
     val licenseUrl: String,
     /** 可选的音色;只有朗读模型有。第一个是默认。 */
     val voices: List<VoiceOption> = emptyList(),
 ) {
     init {
-        require(url.startsWith("https://")) { "模型只从 HTTPS 地址下载" }
-        require(Regex("[0-9a-f]{64}").matches(sha256)) { "SHA-256 要写成 64 位小写十六进制" }
+        require(Regex("[a-z0-9][a-z0-9._-]*").matches(id)) { "模型编号只用小写字母、数字和 ._-" }
+        require(files.isNotEmpty()) { "至少一个文件" }
+        require(files.map { it.name }.toSet().size == files.size) { "文件名不能重复" }
     }
+
+    /** 要下载的总字节数。 */
+    val downloadBytes: Long get() = files.sumOf { it.bytes }
+
+    /** 清单里这一版文件的指纹;下好的模型目录记着它,清单换了文件就算没下载。 */
+    val fingerprint: String get() = files.joinToString("\n") { "${it.name} ${it.sha256} ${it.bytes} ${it.unpack}" }
 }
 
 /** 朗读模型里的一个音色:[speakerId] 是模型里的编号,[label] 是界面上的名字的键(界面自己翻译)。 */
 data class VoiceOption(val speakerId: Int, val label: String)
 
 /**
- * 本机语音模型的清单。都是 sherpa-onnx 发布页上打包好的 int8 版本(地址、大小、SHA-256 取自 GitHub 发布接口),
- * 运行时同样用 sherpa-onnx;把运行库接进构建是后面的一步,见 docs/roadmap.md。
+ * 本机语音模型的清单,运行时是 sherpa-onnx(见 tools/voice/)。地址、大小、SHA-256 都是对着下载下来的文件核过的。
  */
 object VoiceCatalog {
     private const val RELEASES = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
+    /** k2-fsa 转好的 Parakeet v3 int8,固定在一个提交上,文件不会悄悄变。 */
+    private const val PARAKEET_HF =
+        "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/2bda32ec70b097a55adaa07d9a7173915b43cc78"
 
+    /** Parakeet v3 目录里的文件名,识别引擎按这些名字找。 */
+    object Parakeet {
+        const val ENCODER = "encoder.int8.onnx"
+        const val DECODER = "decoder.int8.onnx"
+        const val JOINER = "joiner.int8.onnx"
+        const val TOKENS = "tokens.txt"
+        /** 判断话说完没有的 Silero VAD,和识别模型放在一起。 */
+        const val VAD = "silero_vad.onnx"
+    }
+
+    /**
+     * Parakeet v3(NVIDIA parakeet-tdt-0.6b-v3 的 int8 ONNX,25 种欧洲语言,自己认语言)加 Silero VAD。
+     * 一个个文件直接下(不是一个大压缩包),断了能接着下,下完不用再解包。
+     */
     val parakeet3 = ModelSpec(
         engine = VoiceEngineId.Parakeet3,
-        url = "$RELEASES/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
-        sha256 = "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf",
-        downloadBytes = 487_170_055,
-        dirName = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+        id = "parakeet-tdt-0.6b-v3-int8",
+        files = listOf(
+            ModelFile(Parakeet.ENCODER, "$PARAKEET_HF/${Parakeet.ENCODER}",
+                "acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247", 652_184_281),
+            ModelFile(Parakeet.DECODER, "$PARAKEET_HF/${Parakeet.DECODER}",
+                "179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e", 11_845_275),
+            ModelFile(Parakeet.JOINER, "$PARAKEET_HF/${Parakeet.JOINER}",
+                "3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3", 6_355_277),
+            ModelFile(Parakeet.TOKENS, "$PARAKEET_HF/${Parakeet.TOKENS}",
+                "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d", 93_939),
+            ModelFile(Parakeet.VAD, "$RELEASES/asr-models/silero_vad.onnx",
+                "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", 643_854),
+        ),
         license = "CC-BY-4.0",
         licenseUrl = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
     )
 
     val supertonic3 = ModelSpec(
         engine = VoiceEngineId.Supertonic3,
-        url = "$RELEASES/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-        sha256 = "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427",
-        downloadBytes = 128_774_318,
-        dirName = "sherpa-onnx-supertonic-3-tts-int8-2026-05-11",
+        id = "supertonic-3-tts-int8-2026-05-11",
+        files = listOf(
+            ModelFile("sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+                "$RELEASES/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+                "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427", 128_774_318, unpack = true),
+        ),
         license = "OpenRAIL-M",
         licenseUrl = "https://huggingface.co/Supertone/supertonic",
-        // 先只列默认音色;其余音色的编号等接上运行时、对照模型自带的说明再补
+        // 先只列默认音色;其余音色的编号等接上朗读、对照模型自带的说明再补
         voices = listOf(VoiceOption(0, "female_1")),
     )
 

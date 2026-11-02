@@ -36,4 +36,15 @@ class VoicePickTest {
         assertNull(none.engine)
         assertEquals(VoicePick.Notice.PhoneUnavailable, none.notice)
     }
+
+    @Test fun downloadedParakeetIsUsedAndIsTheSecondFallback() {
+        val withModel = all + VoiceEngineId.Parakeet3
+        val chosen = VoicePick.recognizer(VoiceConfig(speech = SpeechEngine.Parakeet3), true, withModel)
+        assertEquals(VoiceEngineId.Parakeet3, chosen.engine)
+        assertNull(chosen.notice)
+        // 手机没有识别服务时先退到下好的本机模型,不花 ElevenLabs 的钱
+        val noPhone = VoicePick.recognizer(VoiceConfig(hasElevenLabsKey = true), false, withModel)
+        assertEquals(VoiceEngineId.Parakeet3, noPhone.engine)
+        assertEquals(VoicePick.Notice.PhoneUnavailable, noPhone.notice)
+    }
 }

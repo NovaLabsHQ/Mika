@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 class ScribeDictation(
     private val recognizer: SpeechRecognizer,
     private val capture: AudioCapture = AudioCapture(),
-    private val gate: () -> EndOfSpeechGate = { EndOfSpeechGate() },
+    private val gate: () -> SpeechGate = { EndOfSpeechGate() },
 ) : Dictation {
     override val engine: VoiceEngineId get() = recognizer.id
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
