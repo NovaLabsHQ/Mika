@@ -33,6 +33,8 @@ android {
         buildConfigField("boolean", "BETA", "true")
         // 电脑连接(MCP)默认监听的端口;并存安装的包换一个,两个同时打开时不抢端口
         buildConfigField("int", "MCP_DEFAULT_PORT", "8765")
+        // 任务看板(GitHub issues 派活给手机):只在 Mika Tester 包里打开,别的包设置页里看不到
+        buildConfigField("boolean", "TESTER_BOARD", "false")
         // sherpa-onnx 的 Kotlin 类由 JNI 按名字读字段、调方法;以后打开压缩混淆时不能改名或删掉
         proguardFiles("proguard-voice.pro")
     }
@@ -87,6 +89,7 @@ android {
             applicationIdSuffix = ".tester"
             versionNameSuffix = "-tester"
             buildConfigField("int", "MCP_DEFAULT_PORT", "28765")
+            buildConfigField("boolean", "TESTER_BOARD", "true")
             matchingFallbacks += "debug"
         }
     }

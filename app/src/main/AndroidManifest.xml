@@ -161,6 +161,16 @@
                 android:value="Keeps the endpoint the user turned on (local network, or loopback for a computer on USB) open so the user's own computer can hand tasks to the app" />
         </service>
 
+        <!-- 任务看板打开期间轮询 GitHub issues(只在 Mika Tester 包里能打开);不对外开放 -->
+        <service
+            android:name=".board.BoardService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Checks the GitHub issue board the user configured for app-testing tasks while the user has this turned on" />
+        </service>
+
         <!-- 用 ChatGPT 登录期间:用户在浏览器里登录时撑住进程,本机回调才有人接;登录一结束就停 -->
         <service
             android:name=".settings.ChatGptSignInService"
