@@ -1,9 +1,12 @@
 package com.wangzan101.mika.voice
 
 import android.content.Context
+import com.wangzan101.mika.core.voice.ElevenLabsScribe
 import com.wangzan101.mika.core.voice.VoiceEngineId
 import com.wangzan101.mika.settings.VoiceConfig
 import com.wangzan101.mika.settings.VoiceSettings
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
 /**
  * 语音引擎的登记处:按设置里的选择给出这一次听写用哪个引擎;选的那个用不了(没填 Key、模型还没接上、
@@ -20,12 +23,22 @@ class VoiceEngines(private val context: Context, private val settings: VoiceSett
 
     private fun create(id: VoiceEngineId): Dictation? = when (id) {
         VoiceEngineId.PhoneRecognizer -> PhoneDictation(context)
+        // Key 用时现解密,不在内存里常驻
+        VoiceEngineId.ElevenLabsScribe -> ScribeDictation(ElevenLabsScribe(http, apiKey = settings::elevenLabsKey))
         else -> null
+    }
+
+    private val http: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
     }
 
     companion object {
         /** 这一版已经接好的识别引擎;本机模型(Parakeet v3)接上运行时后加进来。 */
-        val IMPLEMENTED: Set<VoiceEngineId> = setOf(VoiceEngineId.PhoneRecognizer)
+        val IMPLEMENTED: Set<VoiceEngineId> = setOf(VoiceEngineId.PhoneRecognizer, VoiceEngineId.ElevenLabsScribe)
     }
 }
 
