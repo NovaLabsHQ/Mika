@@ -53,6 +53,17 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(MUTE_TARGET, on).commit()
     }
 
+    /**
+     * 「别动这些 App」:干活时从不把它们从用户的屏上挪到 Mika 的屏;出现在 Mika 屏上就送回用户的屏(不结束它)。
+     * 包名集合,默认空。
+     */
+    fun leaveAloneApps(): Set<String> = prefs.getStringSet(LEAVE_ALONE_APPS, null)?.toSet().orEmpty()
+
+    fun setLeaveAloneApps(packages: Set<String>) {
+        // 存一份新的集合:系统不保证改动传进来的那份会被写下
+        prefs.edit().putStringSet(LEAVE_ALONE_APPS, packages.map(String::trim).filter(String::isNotEmpty).toSet()).commit()
+    }
+
     /** 在 App 里操作的节奏:快、标准(默认)、像人(见 [OperatingPace])。 */
     fun operatingPace(): OperatingPace = OperatingPace.parse(prefs.getString(OPERATING_PACE, null)) ?: OperatingPace.DEFAULT
 
@@ -112,6 +123,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val PARALLEL_MAX = "parallel_max"
         private const val KEEP_SCREEN_ON = "keep_screen_on"
         private const val MUTE_TARGET = "mute_target"
+        private const val LEAVE_ALONE_APPS = "leave_alone_apps"
         private const val OPERATING_PACE = "operating_pace"
         private const val CAPSULE_MODE = "capsule_mode"
         private const val CAPSULE_SIDE = "capsule_side"
