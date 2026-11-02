@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.wangzan101.mika.core.voice.ElevenLabsScribe
 import com.wangzan101.mika.core.voice.ModelSpec
+import com.wangzan101.mika.core.voice.SpeechSynthesizer
 import com.wangzan101.mika.core.voice.VoiceCatalog
 import com.wangzan101.mika.core.voice.VoiceEngineId
 import com.wangzan101.mika.settings.VoiceConfig
@@ -34,6 +35,24 @@ class VoiceEngines(private val context: Context, private val settings: VoiceSett
     /** Parakeet v3 的运行时,听写之间留着(闲一阵自己卸)。 */
     val parakeet: ParakeetRuntime = ParakeetRuntime({ models.dir(VoiceCatalog.parakeet3) })
 
+    /** Supertonic 3 的运行时,读回答之间留着(闲一阵自己卸)。 */
+    val supertonic: SupertonicRuntime = SupertonicRuntime({ models.dir(VoiceCatalog.supertonic3) })
+
+    /** 放回答的声音;整个 App 一个,新读的会停掉旧的。 */
+    val player: VoicePlayer by lazy { VoicePlayer(context) }
+
+    /** 读回答的(界面、语音对话共用)。 */
+    val speaker: ReplySpeaker by lazy { ReplySpeaker(context, this, player) }
+
+    /**
+     * 读回答用的引擎:现在只有本机的 Supertonic 3(设置里的 ElevenLabs 是旧文件留下的,当它选的是 Supertonic 3)。
+     * 模型没下好、或这台手机跑不了时为 null。
+     */
+    fun synthesizer(): SpeechSynthesizer? =
+        if (replyReady()) SherpaSupertonicSynthesizer(supertonic) { settings.config.value.supertonicVoice } else null
+
+    /** 朗读能用:Supertonic 3 下好了、这台手机跑得动。 */
+    fun replyReady(): Boolean = ParakeetRuntime.supported && models.isReady(VoiceCatalog.supertonic3)
 
     /** 这一次听写:[dictation] 为空表示一个能用的都没有;[notice] 不为空时界面要说一句为什么没用上选的那个。 */
     class Choice(val dictation: Dictation?, val notice: VoicePick.Notice?)
@@ -58,6 +77,7 @@ class VoiceEngines(private val context: Context, private val settings: VoiceSett
     /** 删掉一个本机模型:先从内存里卸掉,再删文件。 */
     suspend fun removeModel(spec: ModelSpec) {
         if (spec.engine == VoiceEngineId.Parakeet3) parakeet.unload()
+        if (spec.engine == VoiceEngineId.Supertonic3) { speaker.stop(); supertonic.unload() }
         models.remove(spec)
     }
 

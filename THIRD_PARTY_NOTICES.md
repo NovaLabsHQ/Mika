@@ -255,3 +255,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - License: MIT;Copyright (c) 2020-present Silero Team
 - File: `silero_vad.onnx`(取自 https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models)
 - Usage: **不随 APK 发布**。和 Parakeet v3 一起下载,本机听写时判断什么时候开始说话、什么时候说完。
+
+## Supertonic 3
+
+- Project: https://huggingface.co/Supertone/supertonic-3(Supertone Inc.;上游提交 3cadd1ee6394adea1bd021217a0e650ede09a323)
+- License: 模型权重 BigScience OpenRAIL-M(带附件 A 的使用限制:不得用于违法、冒充他人、散布有害的虚假信息、骚扰,
+  发布生成内容时要写明是机器生成等);推理代码 MIT,Copyright (c) 2025 Supertone Inc.
+- Converted model: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`
+  (取自 https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models,k2-fsa 转成 int8 ONNX;
+  SHA-256 82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427,包里带上游的 LICENSE)
+- Usage: **不随 APK 发布**。用户在 设置 › 语音 里先看过使用限制、点「同意并下载」后才下载到本机,未修改;
+  用于本机朗读回答(31 种语言,不含中文)。Mika 不把生成的声音存下或发出去,只在手机上播放。

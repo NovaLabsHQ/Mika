@@ -75,6 +75,23 @@ class VoiceCatalogTest {
         assertTrue(VoiceCatalog.supertonic3.voices.isNotEmpty())
     }
 
+    @Test fun supertonicHasTenUpstreamVoices() {
+        val s = VoiceCatalog.supertonic3
+        assertEquals((0..9).toList(), s.voices.map { it.speakerId })
+        // sid 0..4 = F1..F5、5..9 = M1..M5,和包里 voice.bin 的顺序一致
+        assertEquals(listOf("F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5"), s.voices.map { it.label })
+        assertEquals("OpenRAIL-M", s.license)
+        assertEquals("https://huggingface.co/Supertone/supertonic-3", s.licenseUrl)
+        val f = s.files.single()
+        assertEquals(VoiceCatalog.Supertonic.ARCHIVE, f.name)
+        assertEquals("https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/${VoiceCatalog.Supertonic.ARCHIVE}", f.url)
+        assertEquals("82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427", f.sha256)
+        assertEquals(128_774_318L, f.bytes)
+        assertEquals(7, VoiceCatalog.Supertonic.REQUIRED.size)
+        assertEquals(31, VoiceCatalog.Supertonic.LANGUAGES.size)
+        assertTrue("zh" !in VoiceCatalog.Supertonic.LANGUAGES)
+    }
+
     @Test fun parakeetIsFiveFilesNoUnpack() {
         val p = VoiceCatalog.parakeet3
         assertEquals(

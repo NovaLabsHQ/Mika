@@ -1,6 +1,12 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -53,6 +59,7 @@ import com.wangzan101.mika.voice.ModelPhase
 import com.wangzan101.mika.voice.ModelProblem
 import com.wangzan101.mika.voice.ModelState
 import com.wangzan101.mika.voice.ParakeetRuntime
+import com.wangzan101.mika.voice.ReplySpeaker
 import com.wangzan101.mika.voice.VoiceEngines
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,32 +67,39 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /**
- * 这一行能不能选:不用下载的引擎都能选;本机模型要已经下好、这台手机跑得动。
- * [models] 是各模型的下载状态(按模型编号),朗读模型(Supertonic 3)还没接上运行时,先一律不能选。
+ * 这一行能不能选:不用下载的引擎都能选;本机模型(Parakeet v3、Supertonic 3)要已经下好、这台手机跑得动。
+ * [models] 是各模型的下载状态(按模型编号)。
  */
-internal fun voiceEngineReady(id: VoiceEngineId, models: Map<String, ModelState> = emptyMap(), supported: Boolean = true): Boolean =
-    when {
-        !id.needsModel -> true
-        id == VoiceEngineId.Parakeet3 -> supported && models[VoiceCatalog.parakeet3.id]?.phase == ModelPhase.Ready
-        else -> false
-    }
+internal fun voiceEngineReady(id: VoiceEngineId, models: Map<String, ModelState> = emptyMap(), supported: Boolean = true): Boolean {
+    if (!id.needsModel) return true
+    val spec = VoiceCatalog.modelFor(id) ?: return false
+    return supported && models[spec.id]?.phase == ModelPhase.Ready
+}
+
+/** 音色在界面上的名字:上游的名字原样写(F1…M5),编号不对时退回第一个。 */
+internal fun supertonicVoiceLabel(sid: Int): String =
+    VoiceCatalog.supertonic3.voices.firstOrNull { it.speakerId == sid }?.label ?: VoiceCatalog.supertonic3.voices.first().label
 
 /** 大小按十进制 MB 写,和发布页上的写法一致。 */
 internal fun voiceBytes(bytes: Long): String = String.format(Locale.ROOT, "%.1f MB", bytes / 1_000_000.0)
 
 internal fun voiceModelSize(id: VoiceEngineId): String = VoiceCatalog.modelFor(id)?.let { voiceBytes(it.downloadBytes) }.orEmpty()
 
-/** 模型的下载、暂停、删除;界面只管转给 [VoiceEngines]。 */
+/** 模型的下载、暂停、删除,朗读的试听、换音色;界面只管转给 [VoiceEngines]。 */
 class VoiceModelActions(
     val download: (ModelSpec) -> Unit = {},
     val cancel: (ModelSpec) -> Unit = {},
     val remove: (ModelSpec) -> Unit = {},
+    /** 用选的音色读一句试听;再点一次停。 */
+    val preview: () -> Unit = {},
+    val stopPreview: () -> Unit = {},
+    val setVoice: (Int) -> Unit = {},
 )
 
 /**
- * 设置 › 语音:「语音识别」「朗读回答」两组单选;Parakeet v3 下好模型后能选,下面一张卡片管下载
- * (进度、暂停、接着下、删除);朗读的本机模型先看得见、点不了(写「即将推出」)。
- * ElevenLabs 没填 Key 时那一行写「填入 API Key」,点了先弹出填 Key 的面板,存好再选上。
+ * 设置 › 语音:「语音识别」一组单选,Parakeet v3 下好模型后能选;「朗读回答」只有本机的 Supertonic 3。
+ * 每个本机模型下面一张卡片管下载(进度、暂停、接着下、删除);Supertonic 3 下载前先弹出 OpenRAIL-M 的使用限制,
+ * 下好后在卡片里换音色、试听。ElevenLabs 没填 Key 时那一行写「填入 API Key」,点了先弹出填 Key 的面板,存好再选上。
  */
 @Composable
 fun VoiceScreen(settings: VoiceSettings, engines: VoiceEngines, onBack: () -> Unit) {
@@ -96,6 +110,9 @@ fun VoiceScreen(settings: VoiceSettings, engines: VoiceEngines, onBack: () -> Un
     // 填完 Key 后要选上的那一项(从哪一行点进来的)
     var afterKey by remember { mutableStateOf<(() -> Unit)?>(null) }
     var failed by remember { mutableStateOf(false) }
+    val previewing by engines.player.playing.collectAsState()
+    var previewNote by remember { mutableStateOf<Int?>(null) }
+    val previewText = stringResource(R.string.voice_preview_text)
     fun change(action: () -> Unit) {
         failed = false
         scope.launch {
@@ -120,6 +137,20 @@ fun VoiceScreen(settings: VoiceSettings, engines: VoiceEngines, onBack: () -> Un
                     }
                 }
             },
+            preview = {
+                previewNote = null
+                scope.launch {
+                    previewNote = when (val o = engines.speaker.speak(previewText)) {
+                        is ReplySpeaker.Outcome.Spoke, ReplySpeaker.Outcome.Stopped -> null
+                        ReplySpeaker.Outcome.Interrupted -> R.string.voice_speak_interrupted
+                        ReplySpeaker.Outcome.NotReady -> R.string.voice_model_needed
+                        ReplySpeaker.Outcome.Unsupported -> R.string.voice_speak_unsupported
+                        is ReplySpeaker.Outcome.Failed -> R.string.voice_speak_failed
+                    }
+                }
+            },
+            stopPreview = { engines.speaker.stop() },
+            setVoice = { sid -> change { settings.setSupertonicVoice(sid) } },
         )
     }
 
@@ -135,7 +166,9 @@ fun VoiceScreen(settings: VoiceSettings, engines: VoiceEngines, onBack: () -> Un
             // 每次重画时看一眼,够提示用
             onWifi = engines.models.onWifi(),
             actions = actions,
+            previewing = previewing,
         )
+        previewNote?.let { FooterNote(stringResource(it), color = MikaTheme.colors.warn) }
         if (failed) FooterNote(stringResource(R.string.voice_save_failed), color = MikaTheme.colors.bad)
     }
 
@@ -171,6 +204,8 @@ fun VoiceContent(
     supported: Boolean = true,
     onWifi: Boolean = true,
     actions: VoiceModelActions = VoiceModelActions(),
+    /** 正在试听(或在读别的回答)。 */
+    previewing: Boolean = false,
 ) {
     val soon = stringResource(R.string.voice_coming_soon)
     val addKey = stringResource(R.string.voice_add_key)
@@ -207,23 +242,58 @@ fun VoiceContent(
     }
     if (supported) {
         val spec = VoiceCatalog.parakeet3
-        ModelCard(spec, models[spec.id] ?: ModelState(ModelPhase.Absent, 0, spec.downloadBytes), config.wifiOnly, onWifi, actions)
+        ModelCard(
+            spec, stringResource(R.string.voice_model_parakeet),
+            models[spec.id] ?: ModelState(ModelPhase.Absent, 0, spec.downloadBytes), config.wifiOnly, onWifi, actions,
+        )
     }
 
     GroupLabel(stringResource(R.string.voice_group_reply))
+    // 朗读只有本机的 Supertonic 3;设置里旧的 ElevenLabs 也当它(界面不给 ElevenLabs 朗读这一项)
+    val tts = VoiceCatalog.supertonic3
+    val ttsState = models[tts.id] ?: ModelState(ModelPhase.Absent, 0, tts.downloadBytes)
+    val ttsReady = voiceEngineReady(VoiceEngineId.Supertonic3, models, supported)
     GroupCard {
-        ReplyEngine.entries.forEachIndexed { i, e ->
-            val ready = voiceEngineReady(e.id)
-            val subtitle = when (e) {
-                ReplyEngine.Supertonic3 -> stringResource(R.string.voice_supertonic_detail, stringResource(R.string.voice_female_1), voiceModelSize(e.id))
-                ReplyEngine.ElevenLabs -> if (config.hasElevenLabsKey) stringResource(R.string.voice_reply_key_ready) else addKey
-            }
-            RadioRow(
-                stringResource(if (e == ReplyEngine.Supertonic3) R.string.voice_supertonic else R.string.voice_elevenlabs),
-                selected = config.reply == e, onClick = { if (config.reply != e) onReply(e) },
-                subtitle = subtitle, first = i == 0, enabled = ready,
-            ) { if (!ready) RowValue(soon) }
+        RadioRow(
+            stringResource(R.string.voice_supertonic),
+            selected = ttsReady, onClick = { if (config.reply != ReplyEngine.Supertonic3) onReply(ReplyEngine.Supertonic3) },
+            subtitle = stringResource(R.string.voice_supertonic_detail, supertonicVoiceLabel(config.supertonicVoice), voiceModelSize(VoiceEngineId.Supertonic3)),
+            first = true, enabled = ttsReady,
+        ) {
+            if (!ttsReady) RowValue(stringResource(if (supported) R.string.voice_model_needed else R.string.voice_model_unsupported))
         }
+    }
+    if (supported) {
+        var licenseAsk by remember { mutableStateOf(false) }
+        var voicePick by remember { mutableStateOf(false) }
+        ModelCard(
+            tts, stringResource(R.string.voice_model_supertonic), ttsState, config.wifiOnly, onWifi,
+            // 下载前先说清楚 OpenRAIL-M 的使用限制
+            actions = VoiceModelActions(
+                download = { licenseAsk = true }, cancel = actions.cancel, remove = { actions.stopPreview(); actions.remove(it) },
+            ),
+            ready = {
+                ListRow(null, stringResource(R.string.voice_voice_row), onClick = { voicePick = true }) {
+                    RowValue(supertonicVoiceLabel(config.supertonicVoice))
+                    RowChevron()
+                }
+            },
+            readyActions = {
+                if (previewing) MikaButton(stringResource(R.string.voice_preview_stop), actions.stopPreview,
+                    Modifier.testTag("voice-preview-stop"), size = ButtonSize.Small)
+                else MikaButton(stringResource(R.string.voice_preview), actions.preview,
+                    Modifier.testTag("voice-preview"), size = ButtonSize.Small)
+            },
+        )
+        if (licenseAsk) SupertonicLicenseDialog(
+            onAccept = { licenseAsk = false; actions.download(tts) },
+            onDismiss = { licenseAsk = false },
+        )
+        if (voicePick) VoicePickSheet(
+            selected = config.supertonicVoice,
+            onPick = { sid -> voicePick = false; if (sid != config.supertonicVoice) actions.setVoice(sid) },
+            onDismiss = { voicePick = false },
+        )
     }
     FooterNote(stringResource(R.string.voice_reply_foot))
 
@@ -243,7 +313,18 @@ fun VoiceContent(
 
 /** 一个本机模型的下载卡片:现在什么样、进度条、按钮;不在 Wi-Fi 上时提醒一句。 */
 @Composable
-private fun ModelCard(spec: ModelSpec, state: ModelState, wifiOnly: Boolean, onWifi: Boolean, actions: VoiceModelActions) {
+private fun ModelCard(
+    spec: ModelSpec,
+    title: String,
+    state: ModelState,
+    wifiOnly: Boolean,
+    onWifi: Boolean,
+    actions: VoiceModelActions,
+    /** 下好后卡片里多出来的行(朗读模型的音色)。 */
+    ready: @Composable () -> Unit = {},
+    /** 下好后「删除」前面的按钮(朗读模型的试听)。 */
+    readyActions: @Composable () -> Unit = {},
+) {
     val c = MikaTheme.colors
     val total = voiceBytes(spec.downloadBytes)
     val progress = stringResource(R.string.voice_model_downloading, voiceBytes(state.bytes), total)
@@ -264,7 +345,7 @@ private fun ModelCard(spec: ModelSpec, state: ModelState, wifiOnly: Boolean, onW
     }
     GroupCard(Modifier.testTag("voice-model-card")) {
         ListRow(
-            null, stringResource(R.string.voice_model_parakeet), subtitle = line, first = true,
+            null, title, subtitle = line, first = true,
             detail = stringResource(R.string.voice_model_license, spec.license),
         )
         val showBar = state.busy || state.phase == ModelPhase.Paused || (state.phase == ModelPhase.Failed && state.bytes > 0)
@@ -276,7 +357,9 @@ private fun ModelCard(spec: ModelSpec, state: ModelState, wifiOnly: Boolean, onW
                 LinearProgressIndicator(progress = { state.fraction }, modifier = bar, color = c.accent, trackColor = c.fill)
             }
         }
+        if (state.phase == ModelPhase.Ready) ready()
         RowActions {
+            if (state.phase == ModelPhase.Ready) readyActions()
             when {
                 state.busy -> MikaButton(stringResource(R.string.voice_model_cancel), { actions.cancel(spec) },
                     Modifier.testTag("voice-model-cancel"), kind = ButtonKind.Tonal, size = ButtonSize.Small)
@@ -298,6 +381,51 @@ private fun ModelCard(spec: ModelSpec, state: ModelState, wifiOnly: Boolean, onW
         !onWifi && wifiOnly -> FooterNote(stringResource(R.string.voice_model_failed_wifi), color = c.warn)
         !onWifi -> FooterNote(stringResource(R.string.voice_model_mobile_warning, total), color = c.warn)
         else -> FooterNote(stringResource(R.string.voice_download_note))
+    }
+}
+
+/** Supertonic 3 下载前的许可说明:权重是 OpenRAIL-M,带使用限制;链接到上游的许可全文。 */
+@Composable
+private fun SupertonicLicenseDialog(onAccept: () -> Unit, onDismiss: () -> Unit) {
+    val uri = LocalUriHandler.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.voice_license_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.voice_license_body))
+                Text(
+                    stringResource(R.string.voice_license_link),
+                    Modifier.padding(top = 10.dp).clickable { runCatching { uri.openUri(VoiceCatalog.supertonic3.licenseUrl) } }
+                        .testTag("voice-license-link"),
+                    color = MikaTheme.colors.accent, style = MikaType.Body,
+                )
+            }
+        },
+        confirmButton = { TextButton(onAccept, Modifier.testTag("voice-license-accept")) { Text(stringResource(R.string.voice_license_accept)) } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/** 选 Supertonic 3 的音色:上游的 10 个名字原样列出。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VoicePickSheet(selected: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
+    val c = MikaTheme.colors
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = c.surface, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(bottom = 8.dp).testTag("voice-pick-sheet")) {
+            Text(stringResource(R.string.voice_voice_row), Modifier.padding(horizontal = 16.dp), style = MikaType.Body, color = c.ink)
+            Text(
+                stringResource(R.string.voice_voice_sheet_sub), Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp),
+                style = MikaType.Caption, color = c.ink3,
+            )
+            VoiceCatalog.supertonic3.voices.forEachIndexed { i, v ->
+                RadioRow(v.label, selected = v.speakerId == selected, onClick = { onPick(v.speakerId) }, first = i == 0)
+            }
+        }
     }
 }
 

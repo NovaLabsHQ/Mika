@@ -10,8 +10,7 @@
     <string name="voice_parakeet_detail">On this phone, finds the language itself · %1$s · 25 European languages</string>
     <string name="voice_scribe">ElevenLabs Scribe</string>
     <string name="voice_supertonic">Supertonic 3</string>
-    <string name="voice_supertonic_detail">On this phone · %1$s · %2$s</string>
-    <string name="voice_female_1">Female voice 1</string>
+    <string name="voice_supertonic_detail">On this phone · voice %1$s · %2$s · 31 languages, not Chinese</string>
     <string name="voice_elevenlabs">ElevenLabs</string>
     <string name="voice_add_key">Add an API key</string>
     <string name="voice_key_ready">Uses your API key, sends audio to ElevenLabs</string>
@@ -28,7 +27,7 @@
     <string name="voice_key_save">Save</string>
     <string name="voice_key_remove">Remove key</string>
     <string name="voice_save_failed">Couldn\'t save. Try again.</string>
-    <string name="voice_reply_foot">Reading replies aloud isn\'t wired into the chat yet; this choice is kept for when it is.</string>
+    <string name="voice_reply_foot">Supertonic 3 reads English, Japanese, Korean and 28 more languages, but not Chinese: Chinese sentences are skipped. Replies are read aloud once voice conversation is on.</string>
     <string name="voice_mic">Speak</string>
     <string name="voice_mic_stop">Done speaking</string>
     <string name="voice_listening">Listening…</string>
@@ -67,4 +66,17 @@
     <string name="voice_model_needed">Download first</string>
     <string name="voice_model_mobile_warning">You\'re not on Wi-Fi. Downloading uses %1$s of mobile data.</string>
     <string name="voice_error_model">The Parakeet model is missing or damaged. Download it again in Settings › Voice.</string>
+    <string name="voice_model_supertonic">Supertonic 3 model</string>
+    <string name="voice_voice_row">Voice</string>
+    <string name="voice_voice_sheet_sub">The ten preset voices, named as Supertone names them.</string>
+    <string name="voice_preview">Listen</string>
+    <string name="voice_preview_stop">Stop</string>
+    <string name="voice_speak_interrupted">Another sound is playing, so Mika stopped reading.</string>
+    <string name="voice_speak_unsupported">Supertonic 3 can\'t read this language.</string>
+    <string name="voice_speak_failed">Reading aloud isn\'t working right now.</string>
+    <string name="voice_license_title">Supertonic 3 license</string>
+    <string name="voice_license_body">The Supertonic 3 voice model is released by Supertone under the OpenRAIL-M license. You may use it freely, but not for the uses the license forbids, such as impersonating a real person without consent, deceiving people, harassment, or anything illegal. If you share audio it makes, say that it is machine-generated. The model downloads from GitHub (about 129 MB), preferably on Wi-Fi.</string>
+    <string name="voice_license_link">Read the license on Hugging Face</string>
+    <string name="voice_license_accept">Agree and download</string>
+    <string name="voice_preview_text" translatable="false">Hi, I\'m Mika. This is how I\'ll sound when I read my replies to you.</string>
 </resources>

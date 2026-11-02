@@ -35,6 +35,7 @@ class LicensesTest {
         assertEquals("MIT", byName.getValue("ONNX Runtime").license)
         assertEquals("CC-BY-4.0", byName.getValue("Parakeet TDT 0.6B v3").license)
         assertEquals("MIT", byName.getValue("Silero VAD").license)
+        assertEquals("OpenRAIL-M", byName.getValue("Supertonic 3").license)
     }
 
     /** 「开源许可」页逐个列出自带运行环境里的软件包,每个都有许可证。 */

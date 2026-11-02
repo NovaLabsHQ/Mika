@@ -1,6 +1,7 @@
 package com.wangzan101.mika.settings
 
 import com.wangzan101.mika.core.voice.ElevenLabsTts
+import com.wangzan101.mika.core.voice.VoiceCatalog
 import com.wangzan101.mika.core.voice.VoiceEngineId
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,11 +31,14 @@ enum class ReplyEngine(val id: VoiceEngineId) {
 
 /**
  * 语音设置。[hasElevenLabsKey] 只说有没有存 Key,Key 本身不进状态流,用时由 [VoiceSettings.elevenLabsKey] 现解密。
- * 本机模型还没接上,默认识别用手机自带的、朗读用 ElevenLabs(没 Key 时朗读不出声,不会自动花钱)。
+ * 默认识别用手机自带的,朗读用本机的 Supertonic 3(模型要先下载;没下载时不出声,不会自动花钱)。
+ * 朗读只接了 Supertonic 3:[ReplyEngine.ElevenLabs] 留着是为了读得懂旧的设置文件,界面不再给这个选项。
  */
 data class VoiceConfig(
     val speech: SpeechEngine = SpeechEngine.PhoneRecognizer,
-    val reply: ReplyEngine = ReplyEngine.ElevenLabs,
+    val reply: ReplyEngine = ReplyEngine.Supertonic3,
+    /** Supertonic 3 的音色(sid 0..9,见 VoiceCatalog.supertonic3.voices)。 */
+    val supertonicVoice: Int = 0,
     /** ElevenLabs 朗读用的音色 id。 */
     val voiceId: String = ElevenLabsTts.DEFAULT_VOICE,
     /** 本机模型只在 Wi-Fi 下下载。 */
@@ -54,6 +58,10 @@ class VoiceSettings(private val dir: File, private val cipher: KeyCipher) {
 
     @Synchronized fun setSpeech(engine: SpeechEngine) = savePrefs(config.value.copy(speech = engine))
     @Synchronized fun setReply(engine: ReplyEngine) = savePrefs(config.value.copy(reply = engine))
+    @Synchronized fun setSupertonicVoice(sid: Int) {
+        require(sid in SUPERTONIC_VOICES) { "Bad voice" }
+        savePrefs(config.value.copy(supertonicVoice = sid))
+    }
     @Synchronized fun setWifiOnly(on: Boolean) = savePrefs(config.value.copy(wifiOnly = on))
     @Synchronized fun setVoiceId(id: String) {
         require(VOICE_ID.matches(id)) { "Bad voice id" }
@@ -91,6 +99,7 @@ class VoiceSettings(private val dir: File, private val cipher: KeyCipher) {
             speech = SpeechEngine.entries.firstOrNull { it.name == str("speech") } ?: d.speech,
             reply = ReplyEngine.entries.firstOrNull { it.name == str("reply") } ?: d.reply,
             voiceId = str("voiceId")?.takeIf { VOICE_ID.matches(it) } ?: d.voiceId,
+            supertonicVoice = str("supertonicVoice")?.toIntOrNull()?.takeIf { it in SUPERTONIC_VOICES } ?: d.supertonicVoice,
             wifiOnly = (o?.get("wifiOnly") as? JsonPrimitive)?.booleanOrNull ?: d.wifiOnly,
             hasElevenLabsKey = keyFile.isFile,
         )
@@ -98,7 +107,8 @@ class VoiceSettings(private val dir: File, private val cipher: KeyCipher) {
 
     private fun savePrefs(c: VoiceConfig) {
         val json = buildJsonObject {
-            put("speech", c.speech.name); put("reply", c.reply.name); put("voiceId", c.voiceId); put("wifiOnly", c.wifiOnly)
+            put("speech", c.speech.name); put("reply", c.reply.name); put("voiceId", c.voiceId)
+            put("supertonicVoice", c.supertonicVoice); put("wifiOnly", c.wifiOnly)
         }.toString()
         atomicWrite(prefsFile, json.toByteArray(Charsets.UTF_8))
         mutable.value = c
@@ -116,5 +126,6 @@ class VoiceSettings(private val dir: File, private val cipher: KeyCipher) {
     private companion object {
         /** ElevenLabs 的音色 id 是一串字母数字;只收这种,免得拼进网址出事。 */
         val VOICE_ID = Regex("[A-Za-z0-9]{1,64}")
+        val SUPERTONIC_VOICES = VoiceCatalog.supertonic3.voices.map { it.speakerId }.toSet()
     }
 }

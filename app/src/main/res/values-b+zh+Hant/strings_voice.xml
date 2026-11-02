@@ -10,8 +10,7 @@
     <string name="voice_parakeet_detail">在手機上執行，自己認出是哪種語言 · %1$s · 25 種歐洲語言</string>
     <string name="voice_scribe">ElevenLabs Scribe</string>
     <string name="voice_supertonic">Supertonic 3</string>
-    <string name="voice_supertonic_detail">在手機上執行 · %1$s · %2$s</string>
-    <string name="voice_female_1">女聲 1</string>
+    <string name="voice_supertonic_detail">在手機上執行 · 音色 %1$s · %2$s · 31 種語言，不含中文</string>
     <string name="voice_elevenlabs">ElevenLabs</string>
     <string name="voice_add_key">填入 API Key</string>
     <string name="voice_key_ready">用你的 API Key，錄音傳給 ElevenLabs</string>
@@ -28,7 +27,7 @@
     <string name="voice_key_save">儲存</string>
     <string name="voice_key_remove">刪除 Key</string>
     <string name="voice_save_failed">沒存上，請再試一次。</string>
-    <string name="voice_reply_foot">朗讀回答還沒接進對話，這裡的選擇先留著，接上後就用它。</string>
+    <string name="voice_reply_foot">Supertonic 3 能讀英語、日語、韓語等 31 種語言，但不會讀中文：中文的句子會跳過。開啟語音對話後，回答會讀出來。</string>
     <string name="voice_mic">說話</string>
     <string name="voice_mic_stop">說完了</string>
     <string name="voice_listening">正在聽…</string>
@@ -67,4 +66,16 @@
     <string name="voice_model_needed">先下載模型</string>
     <string name="voice_model_mobile_warning">目前沒連 Wi-Fi，下載會用掉 %1$s 行動數據。</string>
     <string name="voice_error_model">Parakeet 模型缺檔案或已損壞，請在 設定 › 語音 裡重新下載。</string>
+    <string name="voice_model_supertonic">Supertonic 3 模型</string>
+    <string name="voice_voice_row">音色</string>
+    <string name="voice_voice_sheet_sub">10 個預設音色，名字照 Supertone 原來的寫。</string>
+    <string name="voice_preview">試聽</string>
+    <string name="voice_preview_stop">停止</string>
+    <string name="voice_speak_interrupted">有別的聲音在播放，Mika 停下了朗讀。</string>
+    <string name="voice_speak_unsupported">Supertonic 3 讀不了這種語言。</string>
+    <string name="voice_speak_failed">朗讀現在用不了。</string>
+    <string name="voice_license_title">Supertonic 3 的授權</string>
+    <string name="voice_license_body">Supertonic 3 朗讀模型由 Supertone 以 OpenRAIL-M 授權發布。可以自由使用，但不能用於授權禁止的用途，例如未經同意冒充真人、欺騙他人、騷擾或任何違法的事。分享它生成的聲音時要寫明是機器生成的。模型從 GitHub 下載（約 129 MB），最好連著 Wi-Fi。</string>
+    <string name="voice_license_link">在 Hugging Face 上看授權全文</string>
+    <string name="voice_license_accept">同意並下載</string>
 </resources>

@@ -16,6 +16,18 @@ class VoiceSettingsTest {
         assertEquals(SpeechEngine.PhoneRecognizer, c.speech)
         assertFalse(c.hasElevenLabsKey)
         assertTrue(c.wifiOnly)
+        // 朗读默认用本机的 Supertonic 3,第一个音色
+        assertEquals(ReplyEngine.Supertonic3, c.reply)
+        assertEquals(0, c.supertonicVoice)
+    }
+
+    @Test fun supertonicVoicePersistsAndIsChecked() {
+        val s = settings()
+        s.setSupertonicVoice(7)
+        assertEquals(7, settings().config.value.supertonicVoice)
+        assertThrows(IllegalArgumentException::class.java) { s.setSupertonicVoice(10) }
+        tmp.root.resolve("voice.json").writeText("""{"supertonicVoice":"42"}""")
+        assertEquals(0, settings().config.value.supertonicVoice)
     }
 
     @Test fun choicesPersistAndKeyIsEncrypted() {

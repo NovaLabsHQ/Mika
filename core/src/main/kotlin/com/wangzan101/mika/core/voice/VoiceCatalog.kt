@@ -46,7 +46,10 @@ data class ModelSpec(
     val fingerprint: String get() = files.joinToString("\n") { "${it.name} ${it.sha256} ${it.bytes} ${it.unpack}" }
 }
 
-/** 朗读模型里的一个音色:[speakerId] 是模型里的编号,[label] 是界面上的名字的键(界面自己翻译)。 */
+/**
+ * 朗读模型里的一个音色:[speakerId] 是模型里的编号(sherpa-onnx 的 sid),[label] 是上游给这个音色起的名字,
+ * 界面原样显示(不另起「温柔女声」之类上游没说过的名字)。
+ */
 data class VoiceOption(val speakerId: Int, val label: String)
 
 /**
@@ -91,18 +94,48 @@ object VoiceCatalog {
         licenseUrl = "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3",
     )
 
+    /** Supertonic 3 解包后目录里的文件名(去掉了包里最外一层目录),朗读引擎按这些名字找。 */
+    object Supertonic {
+        const val ARCHIVE = "sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2"
+        const val DURATION_PREDICTOR = "duration_predictor.int8.onnx"
+        const val TEXT_ENCODER = "text_encoder.int8.onnx"
+        const val VECTOR_ESTIMATOR = "vector_estimator.int8.onnx"
+        const val VOCODER = "vocoder.int8.onnx"
+        const val TTS_JSON = "tts.json"
+        const val UNICODE_INDEXER = "unicode_indexer.bin"
+        /** 10 个预设音色的风格向量,sid 0..9。 */
+        const val VOICES = "voice.bin"
+
+        /** 引擎起来之前要在的文件;缺一个 sherpa-onnx 可能直接让进程退出,先自己查。 */
+        val REQUIRED = listOf(DURATION_PREDICTOR, TEXT_ENCODER, VECTOR_ESTIMATOR, VOCODER, TTS_JSON, UNICODE_INDEXER, VOICES)
+
+        /**
+         * 上游(Supertone/supertonic-3)的 31 种语言代码,朗读时经 GenerationConfig.extra["lang"] 交给引擎。
+         * 没有中文:中文的话读不出来(见 [SpeechLanguage])。
+         */
+        val LANGUAGES: Set<String> = setOf(
+            "en", "ko", "ja", "ar", "bg", "cs", "da", "de", "el", "es", "et", "fi", "fr", "hi", "hr", "hu",
+            "id", "it", "lt", "lv", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "tr", "uk", "vi",
+        )
+    }
+
+    /**
+     * Supertonic 3(Supertone 的多语言朗读模型,k2-fsa 转成 int8 ONNX 打成一个包),解包后约 145 MB,输出 44.1 kHz。
+     * 音色:包里的 voice.bin 是 sherpa-onnx 的 generate_voices_bin.py 按文件名排序把上游的
+     * voice_styles/F1..F5、M1..M5.json 拼起来的,所以 sid 0..4 = F1..F5、5..9 = M1..M5(逐字节对照过)。
+     * 名字照上游的写;上游没有单独说明每个音色的声音,界面上就只叫 F1、M1。
+     */
     val supertonic3 = ModelSpec(
         engine = VoiceEngineId.Supertonic3,
         id = "supertonic-3-tts-int8-2026-05-11",
         files = listOf(
-            ModelFile("sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
-                "$RELEASES/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",
+            ModelFile(Supertonic.ARCHIVE, "$RELEASES/tts-models/${Supertonic.ARCHIVE}",
                 "82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427", 128_774_318, unpack = true),
         ),
+        // 权重是 BigScience OpenRAIL-M(带使用限制),推理代码是 MIT
         license = "OpenRAIL-M",
-        licenseUrl = "https://huggingface.co/Supertone/supertonic",
-        // 先只列默认音色;其余音色的编号等接上朗读、对照模型自带的说明再补
-        voices = listOf(VoiceOption(0, "female_1")),
+        licenseUrl = "https://huggingface.co/Supertone/supertonic-3",
+        voices = listOf("F1", "F2", "F3", "F4", "F5", "M1", "M2", "M3", "M4", "M5").mapIndexed { i, n -> VoiceOption(i, n) },
     )
 
     val models: List<ModelSpec> = listOf(parakeet3, supertonic3)
