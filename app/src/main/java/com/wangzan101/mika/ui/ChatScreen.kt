@@ -96,6 +96,8 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.alpha
+import com.wangzan101.mika.core.voice.VoiceConversation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -184,6 +186,8 @@ fun ChatScreen(
     var input by rememberSaveable { mutableStateOf("") }
     // 语音输入:听到的字接到输入框里,由用户看过再发
     val dictation = rememberDictation { heard -> input = com.wangzan101.mika.voice.DictationText.append(input, heard) }
+    // 语音对话:听 → 发出去 → 读回答 → 再听;顶栏的耳机键开关
+    val talk = rememberTalk(vm, check)
     var composerHeight by rememberSaveable { mutableIntStateOf(0) }
     var topHeight by rememberSaveable { mutableIntStateOf(0) }
     val density = LocalDensity.current
@@ -306,7 +310,10 @@ fun ChatScreen(
                 left = MikaIcons.Menu, leftLabel = stringResource(R.string.chat_menu), onLeft = onOpenDrawer,
                 // 别的对话里还有任务在跑(并行时):菜单上一个小圆点,侧栏「进行中」里能切过去
                 leftBadge = others.isNotEmpty(),
-                right = { BarIconButton(MikaIcons.New, stringResource(R.string.chat_new), { vm.newConversation() }, enabled = vm.canSwitch()) },
+                right = {
+                    TalkToggle(talk, enabled = talk.active || dictation.phase == DictationPhase.Idle)
+                    BarIconButton(MikaIcons.New, stringResource(R.string.chat_new), { vm.newConversation() }, enabled = vm.canSwitch())
+                },
                 subtitle = sub?.first,
                 subtitleColor = when (sub?.second) {
                     ChatCopy.Tone.Accent -> c.accent
@@ -338,6 +345,7 @@ fun ChatScreen(
             quote = ui.quote,
             onRemoveQuote = vm::clearQuote,
             dictation = dictation,
+            talk = talk,
         )
 
         AgentPip(
@@ -1013,6 +1021,8 @@ internal fun Composer(
     reduceMotion: Boolean = false,
     /** 语音输入;为 null 时没有话筒。没字可发、也没任务在跑时,话筒占发送键的位置。 */
     dictation: DictationUi? = null,
+    /** 语音对话;开着时话筒换成语音对话的键(任务在跑时也在),灰字写对话走到哪。 */
+    talk: TalkUi? = null,
 ) {
     val c = MikaTheme.colors
     // 底部从页面底色淡出到透明,输入栏是浮在上面的玻璃
@@ -1091,7 +1101,7 @@ internal fun Composer(
                     }
                 }
                 Box(Modifier.weight(1f).padding(start = if (attachPanel != null) 2.dp else 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)) {
-                    if (text.isEmpty()) Text(composerHint(dictation) ?: ChatCopy.placeholder(mode, hasHistory), style = MikaType.Body, color = c.ink3, maxLines = 1)
+                    if (text.isEmpty()) Text(talkHint(talk) ?: composerHint(dictation) ?: ChatCopy.placeholder(mode, hasHistory), style = MikaType.Body, color = c.ink3, maxLines = 1)
                     BasicTextField(
                         text, onText,
                         Modifier.fillMaxWidth().testTag("composer-field").focusRequester(field)
@@ -1114,9 +1124,11 @@ internal fun Composer(
                     }
                 }
                 val dictating = dictation != null && dictation.phase != DictationPhase.Idle
-                if (dictation != null && !busy && (!canSend || dictating)) {
+                val talking = talk != null && talk.active
+                if (talking) TalkButton(talk!!)
+                if (!talking && dictation != null && !busy && (!canSend || dictating)) {
                     MicButton(dictation)
-                } else if (!busy || canSend) {
+                } else if (canSend || (!busy && !talking)) {
                     Box(
                         Modifier.size(MikaSize.IconButton)
                             .background(if (canSend) c.accent else c.greySoft, CircleShape)
@@ -1179,6 +1191,66 @@ private fun composerHint(d: DictationUi?): String? = when (d?.phase) {
     DictationPhase.Listening -> d.partial.ifBlank { stringResource(R.string.voice_listening) }
     DictationPhase.Transcribing -> d.partial.ifBlank { stringResource(R.string.voice_transcribing) }
     else -> null
+}
+
+/** 语音对话时输入框的灰字;没开语音对话时为 null。 */
+@Composable
+private fun talkHint(t: TalkUi?): String? = when (t?.phase) {
+    null, VoiceConversation.Phase.Off -> null
+    VoiceConversation.Phase.Listening -> when (t.listening) {
+        DictationPhase.Transcribing -> t.partial.ifBlank { stringResource(R.string.voice_transcribing) }
+        else -> t.partial.ifBlank { stringResource(R.string.voice_listening) }
+    }
+    VoiceConversation.Phase.Waiting -> stringResource(R.string.voice_talk_waiting)
+    VoiceConversation.Phase.Speaking -> stringResource(R.string.voice_talk_speaking)
+    VoiceConversation.Phase.Holding -> stringResource(R.string.voice_talk_holding)
+}
+
+/** 顶栏的语音对话开关:耳机图标,开着时强调色底。 */
+@Composable
+private fun TalkToggle(t: TalkUi, enabled: Boolean) {
+    val c = MikaTheme.colors
+    val label = stringResource(if (t.active) R.string.voice_talk_off else R.string.voice_talk_on)
+    Box(
+        Modifier.size(MikaSize.IconButton)
+            .then(if (t.active) Modifier.background(c.accent, CircleShape) else Modifier)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClickLabel = label, role = Role.Button) { t.toggle() }
+            .testTag("talk-toggle"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(MikaIcons.Headset, label, Modifier.size(MikaSize.Icon).alpha(if (enabled) 1f else 0.35f), tint = if (t.active) c.onAccent else c.ink)
+    }
+}
+
+/** 语音对话的键:在听时强调色底话筒(点了说完了),在读时强调色底停止(点了停下改听),转写时转圈,在等时灰底话筒(点了插话)。 */
+@Composable
+private fun TalkButton(t: TalkUi) {
+    val c = MikaTheme.colors
+    val speaking = t.phase == VoiceConversation.Phase.Speaking
+    val listening = t.phase == VoiceConversation.Phase.Listening
+    val transcribing = listening && t.listening == DictationPhase.Transcribing
+    val label = stringResource(
+        when {
+            speaking -> R.string.voice_talk_interrupt
+            listening -> R.string.voice_mic_stop
+            else -> R.string.voice_mic
+        },
+    )
+    Box(
+        Modifier.size(MikaSize.IconButton)
+            .background(if (speaking || listening) c.accent else c.greySoft, CircleShape)
+            .clip(CircleShape)
+            .clickable(enabled = !transcribing, onClickLabel = label) { t.onTap() }
+            .testTag("talk-mic"),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            transcribing -> CircularProgressIndicator(Modifier.size(18.dp), color = c.onAccent, strokeWidth = 2.dp)
+            speaking -> Icon(MikaIcons.Stop, label, Modifier.size(22.dp), tint = c.onAccent)
+            else -> Icon(MikaIcons.Mic, label, Modifier.size(20.dp), tint = if (listening) c.onAccent else c.ink)
+        }
+    }
 }
 
 /** 话筒键:平时灰底话筒,在听时强调色底(再点一下说完了),转写时转圈、点不了。 */

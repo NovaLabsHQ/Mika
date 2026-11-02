@@ -78,4 +78,18 @@
     <string name="voice_license_body">Supertonic 3 朗讀模型由 Supertone 以 OpenRAIL-M 授權發布。可以自由使用，但不能用於授權禁止的用途，例如未經同意冒充真人、欺騙他人、騷擾或任何違法的事。分享它生成的聲音時要寫明是機器生成的。模型從 GitHub 下載（約 129 MB），最好連著 Wi-Fi。</string>
     <string name="voice_license_link">在 Hugging Face 上看授權全文</string>
     <string name="voice_license_accept">同意並下載</string>
+    <string name="voice_talk_on">開始語音對話</string>
+    <string name="voice_talk_off">結束語音對話</string>
+    <string name="voice_talk_interrupt">停下朗讀，改聽我說</string>
+    <string name="voice_talk_waiting">在等 Mika… 點話筒插話</string>
+    <string name="voice_talk_speaking">正在朗讀… 點一下打斷</string>
+    <string name="voice_talk_holding">請看螢幕處理。點話筒說話</string>
+    <string name="voice_talk_options">選項：%1$s。</string>
+    <string name="voice_talk_confirm">繼續之前，請在螢幕上確認：%1$s。</string>
+    <string name="voice_talk_takeover">需要你在螢幕上接手。</string>
+    <string name="voice_talk_not_ready">在 設定 › 語音 裡下載 Supertonic 3 後才會讀出回答。</string>
+    <string name="voice_talk_end_silence">語音對話結束了：沒聽到說話。</string>
+    <string name="voice_talk_end_not_sent">語音對話結束了：話沒發出去。</string>
+    <string name="voice_speak_replies">讀出回答</string>
+    <string name="voice_speak_replies_foot">不在語音對話裡時，也用 Supertonic 3 讀出目前對話的新回答。語音對話（對話頁頂上的耳機鍵）裡總會讀，而且從不用語音確認任何操作。</string>
 </resources>

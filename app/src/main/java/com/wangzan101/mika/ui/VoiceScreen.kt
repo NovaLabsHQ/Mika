@@ -160,6 +160,7 @@ fun VoiceScreen(settings: VoiceSettings, engines: VoiceEngines, onBack: () -> Un
             onSpeech = { e -> if (e.id.needsKey) needKeyThen { settings.setSpeech(e) } else change { settings.setSpeech(e) } },
             onReply = { e -> if (e.id.needsKey) needKeyThen { settings.setReply(e) } else change { settings.setReply(e) } },
             onWifiOnly = { on -> change { settings.setWifiOnly(on) } },
+            onSpeakReplies = { on -> change { settings.setSpeakReplies(on) } },
             onKey = { afterKey = null; keySheet = true },
             models = models,
             supported = ParakeetRuntime.supported,
@@ -206,6 +207,8 @@ fun VoiceContent(
     actions: VoiceModelActions = VoiceModelActions(),
     /** 正在试听(或在读别的回答)。 */
     previewing: Boolean = false,
+    /** 不在语音对话里时也读出新回答。 */
+    onSpeakReplies: (Boolean) -> Unit = {},
 ) {
     val soon = stringResource(R.string.voice_coming_soon)
     val addKey = stringResource(R.string.voice_add_key)
@@ -296,6 +299,13 @@ fun VoiceContent(
         )
     }
     FooterNote(stringResource(R.string.voice_reply_foot))
+
+    GroupCard {
+        ListRow(null, stringResource(R.string.voice_speak_replies), first = true) {
+            MikaSwitch(config.speakReplies, onSpeakReplies, Modifier.testTag("voice-speak-replies"))
+        }
+    }
+    FooterNote(stringResource(R.string.voice_speak_replies_foot))
 
     GroupCard {
         ListRow(MikaIcons.Key, stringResource(R.string.voice_key_row), first = true, onClick = onKey) {

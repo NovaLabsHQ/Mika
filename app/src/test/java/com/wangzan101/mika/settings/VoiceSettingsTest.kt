@@ -21,6 +21,21 @@ class VoiceSettingsTest {
         assertEquals(0, c.supertonicVoice)
     }
 
+    @Test fun speakRepliesDefaultsOffAndPersists() {
+        val s = settings()
+        assertEquals(false, s.config.value.speakReplies)
+        s.setSpeakReplies(true)
+        assertEquals(true, s.config.value.speakReplies)
+        assertEquals(true, settings().config.value.speakReplies)
+        // 其他设置不受影响
+        assertEquals(ReplyEngine.Supertonic3, settings().config.value.reply)
+        s.setSpeakReplies(false)
+        assertEquals(false, settings().config.value.speakReplies)
+        // 写坏的值按默认
+        tmp.root.resolve("voice.json").writeText("""{"speakReplies":"maybe"}""")
+        assertEquals(false, settings().config.value.speakReplies)
+    }
+
     @Test fun supertonicVoicePersistsAndIsChecked() {
         val s = settings()
         s.setSupertonicVoice(7)

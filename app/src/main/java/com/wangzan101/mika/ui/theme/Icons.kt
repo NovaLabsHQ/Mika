@@ -40,6 +40,12 @@ object MikaIcons {
     val Up = stroke("up", "M12 19 V5 M6 11 l6 -6 l6 6", width = 2.2f)
     /** 说话:话筒,下面一道弧和一根支架。 */
     val Mic = stroke("mic", "M9 6 a3 3 0 0 1 6 0 v5 a3 3 0 0 1 -6 0 z", "M5.5 11 a6.5 6.5 0 0 0 13 0", "M12 17.5 V20.5", width = 2f)
+    /** 语音对话:一副耳机(头梁加两边耳罩)。 */
+    val Headset = stroke(
+        "headset", "M4 15 v-3 a8 8 0 0 1 16 0 v3",
+        "M4 14 h2.5 a1.5 1.5 0 0 1 1.5 1.5 v3 a1.5 1.5 0 0 1 -1.5 1.5 H5.5 A1.5 1.5 0 0 1 4 18.5 z",
+        "M20 14 h-2.5 a1.5 1.5 0 0 0 -1.5 1.5 v3 a1.5 1.5 0 0 0 1.5 1.5 h1 a1.5 1.5 0 0 0 1.5 -1.5 z", width = 2f,
+    )
     val Check = stroke("check", "M5 12.5 l4.5 4.5 L19 7.5", width = 2.2f)
     val Close = stroke("close", "M6 6 l12 12 M18 6 L6 18", width = 2f)
     val Search = stroke("search", "M4 11 a7 7 0 1 0 14 0 a7 7 0 1 0 -14 0", "M20 20 l-4 -4")

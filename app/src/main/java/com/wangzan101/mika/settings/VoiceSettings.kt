@@ -44,6 +44,8 @@ data class VoiceConfig(
     /** 本机模型只在 Wi-Fi 下下载。 */
     val wifiOnly: Boolean = true,
     val hasElevenLabsKey: Boolean = false,
+    /** 不在语音对话里时,对话页开着、有了新回答也读出来。默认关;语音对话里总是读。 */
+    val speakReplies: Boolean = false,
 )
 
 /**
@@ -63,6 +65,7 @@ class VoiceSettings(private val dir: File, private val cipher: KeyCipher) {
         savePrefs(config.value.copy(supertonicVoice = sid))
     }
     @Synchronized fun setWifiOnly(on: Boolean) = savePrefs(config.value.copy(wifiOnly = on))
+    @Synchronized fun setSpeakReplies(on: Boolean) = savePrefs(config.value.copy(speakReplies = on))
     @Synchronized fun setVoiceId(id: String) {
         require(VOICE_ID.matches(id)) { "Bad voice id" }
         savePrefs(config.value.copy(voiceId = id))
@@ -102,6 +105,7 @@ class VoiceSettings(private val dir: File, private val cipher: KeyCipher) {
             supertonicVoice = str("supertonicVoice")?.toIntOrNull()?.takeIf { it in SUPERTONIC_VOICES } ?: d.supertonicVoice,
             wifiOnly = (o?.get("wifiOnly") as? JsonPrimitive)?.booleanOrNull ?: d.wifiOnly,
             hasElevenLabsKey = keyFile.isFile,
+            speakReplies = (o?.get("speakReplies") as? JsonPrimitive)?.booleanOrNull ?: d.speakReplies,
         )
     }
 
@@ -109,6 +113,7 @@ class VoiceSettings(private val dir: File, private val cipher: KeyCipher) {
         val json = buildJsonObject {
             put("speech", c.speech.name); put("reply", c.reply.name); put("voiceId", c.voiceId)
             put("supertonicVoice", c.supertonicVoice); put("wifiOnly", c.wifiOnly)
+            put("speakReplies", c.speakReplies)
         }.toString()
         atomicWrite(prefsFile, json.toByteArray(Charsets.UTF_8))
         mutable.value = c

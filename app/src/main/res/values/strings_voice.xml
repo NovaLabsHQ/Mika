@@ -79,4 +79,18 @@
     <string name="voice_license_link">Read the license on Hugging Face</string>
     <string name="voice_license_accept">Agree and download</string>
     <string name="voice_preview_text" translatable="false">Hi, I\'m Mika. This is how I\'ll sound when I read my replies to you.</string>
+    <string name="voice_talk_on">Start voice conversation</string>
+    <string name="voice_talk_off">End voice conversation</string>
+    <string name="voice_talk_interrupt">Stop speaking and listen</string>
+    <string name="voice_talk_waiting">Waiting for Mika… tap the mic to talk</string>
+    <string name="voice_talk_speaking">Speaking… tap to interrupt</string>
+    <string name="voice_talk_holding">Please check the screen. Tap the mic to talk</string>
+    <string name="voice_talk_options">Options: %1$s.</string>
+    <string name="voice_talk_confirm">I need you to confirm on screen before I go ahead with %1$s.</string>
+    <string name="voice_talk_takeover">I need you to take over on screen.</string>
+    <string name="voice_talk_not_ready">Replies won\'t be read aloud until you download Supertonic 3 in Settings › Voice.</string>
+    <string name="voice_talk_end_silence">Voice conversation ended: didn\'t hear anything.</string>
+    <string name="voice_talk_end_not_sent">Voice conversation ended: the message couldn\'t be sent.</string>
+    <string name="voice_speak_replies">Read replies aloud</string>
+    <string name="voice_speak_replies_foot">Reads each new reply in the open chat with Supertonic 3, even outside voice conversation. Voice conversation (the headset button on the chat page) always reads replies, and never confirms anything by voice.</string>
 </resources>
