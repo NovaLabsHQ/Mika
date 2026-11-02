@@ -23,6 +23,8 @@ android {
         buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
         // 关于页版本号后的 Beta 标记;出正式版时改成 false
         buildConfigField("boolean", "BETA", "true")
+        // 电脑连接(MCP)默认监听的端口;并存安装的包换一个,两个同时打开时不抢端口
+        buildConfigField("int", "MCP_DEFAULT_PORT", "8765")
     }
 
     // 沙箱程序只有 arm64 版本(jniLibs/arm64-v8a);APK 不限 ABI,别的设备照常安装、显示「此设备不支持沙箱」。
@@ -47,6 +49,15 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             isProfileable = true
             matchingFallbacks += "release"
+        }
+        // 和已装的 Mika 并存的调试包:应用标识加 .voice、桌面名「Mika Voice」(src/voicedev/res),数据与设置各自独立,
+        // 不覆盖、不读原版的数据;debug / release / perf 不变。./gradlew :app:assembleVoicedev
+        create("voicedev") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".voice"
+            versionNameSuffix = "-voice"
+            buildConfigField("int", "MCP_DEFAULT_PORT", "18765")
+            matchingFallbacks += "debug"
         }
     }
 
