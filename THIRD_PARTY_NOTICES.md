@@ -223,3 +223,46 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## sherpa-onnx
+
+- Project: https://github.com/k2-fsa/sherpa-onnx
+- Version: 2.0.1,官方安卓包 `sherpa-onnx-static-link-onnxruntime-2.0.1.aar`
+- SHA-256 (AAR): 07e042d97f3a6bd5b7fe74d4eef0513dc01a714b16c15a903250095aba43a575
+- License: Apache-2.0
+- Usage: 本机语音识别与朗读的运行库(Kotlin 接口和 `libsherpa-onnx-jni.so`),未修改,只打包 arm64-v8a 那一份。
+  不进 git,由 `tools/voice/fetch-sherpa-onnx.sh` 按 `tools/voice/sources.lock` 下载、核对后放到 `app/libs/`。
+
+## ONNX Runtime
+
+- Project: https://github.com/microsoft/onnxruntime
+- Version: 1.28.2(sherpa-onnx 2.0.1 的安卓构建脚本所用版本)
+- License: MIT;Copyright (c) Microsoft Corporation
+- Usage: 以静态库形式链接进 sherpa-onnx 的 `libsherpa-onnx-jni.so`,随它打进 APK;Mika 不直接调用它。
+
+## Parakeet TDT 0.6B v3
+
+- Project: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3(NVIDIA)
+- License: CC-BY-4.0
+- Converted model: https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8
+  (k2-fsa 转成 ONNX 并量化为 int8;固定在提交 2bda32ec70b097a55adaa07d9a7173915b43cc78)
+- Usage: **不随 APK 发布**。用户在 设置 › 语音 里选择下载,按 `core/.../voice/VoiceCatalog.kt` 里写明的地址、大小与 SHA-256
+  下载到本机,未修改;用于本机语音识别(25 种欧洲语言)。
+
+## Silero VAD
+
+- Project: https://github.com/snakers4/silero-vad
+- License: MIT;Copyright (c) 2020-present Silero Team
+- File: `silero_vad.onnx`(取自 https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models)
+- Usage: **不随 APK 发布**。和 Parakeet v3 一起下载,本机听写时判断什么时候开始说话、什么时候说完。
+
+## Supertonic 3
+
+- Project: https://huggingface.co/Supertone/supertonic-3(Supertone Inc.;上游提交 3cadd1ee6394adea1bd021217a0e650ede09a323)
+- License: 模型权重 BigScience OpenRAIL-M(带附件 A 的使用限制:不得用于违法、冒充他人、散布有害的虚假信息、骚扰,
+  发布生成内容时要写明是机器生成等);推理代码 MIT,Copyright (c) 2025 Supertone Inc.
+- Converted model: `sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2`
+  (取自 https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models,k2-fsa 转成 int8 ONNX;
+  SHA-256 82fa96f91c4ef8abaae3a14a3f4153facf88bed821d1f7331cec2700f432c427,包里带上游的 LICENSE)
+- Usage: **不随 APK 发布**。用户在 设置 › 语音 里先看过使用限制、点「同意并下载」后才下载到本机,未修改;
+  用于本机朗读回答(31 种语言,不含中文)。Mika 不把生成的声音存下或发出去,只在手机上播放。

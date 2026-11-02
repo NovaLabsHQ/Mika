@@ -297,7 +297,7 @@ PRs welcome. Start with [`docs/architecture.md`](docs/architecture.md) (written 
 
 CLI tests also require Python 3.10+; select an interpreter with `-PmikaPython=/path/to/python3`.
 
-Requires JDK 17 and the Android SDK (`sdk.dir` in `local.properties`, or the `ANDROID_HOME` environment variable).
+Requires JDK 17 and the Android SDK (`sdk.dir` in `local.properties`, or the `ANDROID_HOME` environment variable). Before the first build, run `tools/voice/fetch-sherpa-onnx.sh` to download the sherpa-onnx voice runtime (SHA-256 checked, placed in the git-ignored `app/libs/`); without it the build stops and says so.
 
 ```bash
 ./gradlew :app:assembleDebug                  # debug build

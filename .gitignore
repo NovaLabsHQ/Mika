@@ -9,6 +9,9 @@ local.properties
 *.local.txt
 .kotlin/
 
+# 语音运行库 sherpa-onnx 的 AAR:tools/voice/fetch-sherpa-onnx.sh 下载到这里,不进 git
+app/libs/
+
 # 本地 Agent 工作树与历史安装包
 .claude/
 dist/
