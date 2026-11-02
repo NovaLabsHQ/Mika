@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 并存安装的调试包(mikatester)在桌面、无障碍列表里的名字,和原版 Mika、Mika Voice 区分开 -->
+    <string name="app_name" translatable="false">Mika Tester</string>
+</resources>

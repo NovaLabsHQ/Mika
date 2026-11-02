@@ -77,6 +77,18 @@ android {
             buildConfigField("int", "MCP_DEFAULT_PORT", "18765")
             matchingFallbacks += "debug"
         }
+        // 第三个并存安装的调试包「Mika Tester」:应用标识加 .tester、版本名加 -tester(src/mikatester/res),
+        // 以后专门在手机上替别的代理测装好的 App。和原版、Mika Voice 三个包各自一份数据,文件提供者的 authority 都按
+        // ${applicationId} 拼,互不冲突;电脑连接默认端口 28765,三个同时打开也不抢。语音代码照样编进去(同一份源码),
+        // 模型用到时才下载,不占安装包。构建类型名不能以 test 开头(AGP 把它留给测试),所以叫 mikatester。
+        // ./gradlew :app:assembleMikatester
+        create("mikatester") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".tester"
+            versionNameSuffix = "-tester"
+            buildConfigField("int", "MCP_DEFAULT_PORT", "28765")
+            matchingFallbacks += "debug"
+        }
     }
 
     buildFeatures {
