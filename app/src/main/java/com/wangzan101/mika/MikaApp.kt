@@ -98,6 +98,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     val voice by lazy {
         com.wangzan101.mika.settings.VoiceSettings(java.io.File(filesDir, "settings"), com.wangzan101.mika.settings.KeystoreKeyCipher("mika-voice-keys"))
     }
+    /** 对话页听写用哪个识别引擎,按 [voice] 里的选择现挑。 */
+    val voiceEngines by lazy { com.wangzan101.mika.voice.VoiceEngines(this, voice) }
     val childRuns by lazy { FileChildRunStore(java.io.File(filesDir, "children-v3.json")) }
     override val tabBudget get() = resources.tabBudget
 

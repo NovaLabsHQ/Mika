@@ -29,4 +29,21 @@
     <string name="voice_key_remove">刪除 Key</string>
     <string name="voice_save_failed">沒存上，請再試一次。</string>
     <string name="voice_reply_foot">朗讀回答還沒接進對話，這裡的選擇先留著，接上後就用它。</string>
+    <string name="voice_mic">說話</string>
+    <string name="voice_mic_stop">說完了</string>
+    <string name="voice_listening">正在聽…</string>
+    <string name="voice_transcribing">正在把話變成字…</string>
+    <string name="voice_need_mic">語音輸入要用麥克風，可以在應用程式資訊裡允許。</string>
+    <string name="voice_heard_nothing">沒聽清楚，再說一次吧。</string>
+    <string name="voice_notice_no_key">還沒填 ElevenLabs 的 API Key，先用手機內建辨識。可以在設定 › 語音裡填。</string>
+    <string name="voice_notice_not_ready">選的引擎還不能用，先用手機內建辨識。</string>
+    <string name="voice_notice_phone_unavailable">這支手機沒有語音辨識服務。</string>
+    <string name="voice_notice_none">沒有能用的語音輸入引擎，請在設定 › 語音裡選一個。</string>
+    <string name="voice_error_no_key">請在設定 › 語音裡填 ElevenLabs 的 API Key。</string>
+    <string name="voice_error_auth">ElevenLabs 不認這個 API Key，請在設定 › 語音裡檢查。</string>
+    <string name="voice_error_rate">請求太頻繁，稍等一下再試。</string>
+    <string name="voice_error_quota">ElevenLabs 的額度用完了。</string>
+    <string name="voice_error_network">連不上語音服務。</string>
+    <string name="voice_error_server">語音服務出了問題，稍後再試。</string>
+    <string name="voice_error_unavailable">語音輸入現在用不了。</string>
 </resources>

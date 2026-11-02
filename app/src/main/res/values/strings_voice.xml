@@ -29,4 +29,21 @@
     <string name="voice_key_remove">Remove key</string>
     <string name="voice_save_failed">Couldn\'t save. Try again.</string>
     <string name="voice_reply_foot">Reading replies aloud isn\'t wired into the chat yet; this choice is kept for when it is.</string>
+    <string name="voice_mic">Speak</string>
+    <string name="voice_mic_stop">Done speaking</string>
+    <string name="voice_listening">Listening…</string>
+    <string name="voice_transcribing">Turning speech into text…</string>
+    <string name="voice_need_mic">Mika needs the microphone for voice input. You can allow it in App info.</string>
+    <string name="voice_heard_nothing">Didn\'t catch that. Try again.</string>
+    <string name="voice_notice_no_key">No ElevenLabs API key yet, so the phone recognizer is used. Add one in Settings › Voice.</string>
+    <string name="voice_notice_not_ready">That engine isn\'t available yet, so the phone recognizer is used.</string>
+    <string name="voice_notice_phone_unavailable">This phone has no speech recognition service.</string>
+    <string name="voice_notice_none">No voice input engine is available. Choose one in Settings › Voice.</string>
+    <string name="voice_error_no_key">Add an ElevenLabs API key in Settings › Voice.</string>
+    <string name="voice_error_auth">The ElevenLabs API key was rejected. Check it in Settings › Voice.</string>
+    <string name="voice_error_rate">Too many requests. Wait a moment and try again.</string>
+    <string name="voice_error_quota">Your ElevenLabs quota is used up.</string>
+    <string name="voice_error_network">No connection to the speech service.</string>
+    <string name="voice_error_server">The speech service had a problem. Try again later.</string>
+    <string name="voice_error_unavailable">Voice input isn\'t working right now.</string>
 </resources>
