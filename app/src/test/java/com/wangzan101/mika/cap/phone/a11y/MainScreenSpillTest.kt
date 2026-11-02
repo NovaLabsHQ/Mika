@@ -10,6 +10,7 @@ class MainScreenSpillTest {
     private val since = 10_000L
     private val window = 6_000L
     private val home = setOf("com.home", "com.wangzan101.mika")
+    private val background = 2_000L
 
     private fun arrival(
         task: Int = 7, pkg: String? = "com.chat", at: Long = since + 500, from: Int = MainScreenSpill.NEW,
@@ -17,16 +18,52 @@ class MainScreenSpillTest {
     ) = MainScreenSpill.Arrival(task, pkg, user, at, from, sameTask, standard, now)
 
     private fun decide(vararg a: MainScreenSpill.Arrival, topBefore: Int = 3, taps: List<MainScreenSpill.Tap> = emptyList()) =
-        MainScreenSpill.decide(a.toList(), since, window, topBefore, home, taps)
+        MainScreenSpill.decide(a.toList(), since, window, topBefore, home, taps, backgroundWindowMs = background)
 
     @Test fun newTaskOnTheMainScreenRightAfterTheActionIsPulledBack() {
         assertEquals(listOf(PullBack(arrival())), decide(arrival()))
     }
 
-    @Test fun backgroundTaskOnTheMainScreenBroughtToFrontIsPulledBackToo() {
-        // 系统把那个 App 已有的后台任务拉到前台,不新建任务
+    @Test fun backgroundTaskOnTheMainScreenBroughtToFrontIsReportedNotPulledBack() {
+        // 系统把那个 App 已有的后台任务拉到前台,不新建任务:那是用户手上的 App(用户反馈 Instacart Shopper、YouTube
+        // 被拉进了 Mika 的屏),只报给模型,不从用户眼前抽走
         val a = arrival(from = MainScreenSpill.MAIN)
-        assertEquals(listOf(PullBack(a)), decide(a))
+        assertEquals(listOf(InUse(a)), decide(a))
+    }
+
+    @Test fun backgroundTaskComingUpLateIsTheUsersOwnSwitch() {
+        // 后台任务过了 2 秒才到前台:多半是用户自己切过去的,不算这个动作的
+        assertTrue(decide(arrival(from = MainScreenSpill.MAIN, at = since + background + 1)).isEmpty())
+        // 新开的任务照旧按整个窗口算
+        val late = arrival(at = since + background + 1)
+        assertEquals(listOf(PullBack(late)), decide(late))
+    }
+
+    @Test fun backgroundRuleIsOffForThePickedApp() {
+        val a = arrival(from = MainScreenSpill.MAIN)
+        assertEquals(listOf(PullBack(a)), MainScreenSpill.decide(listOf(a), since, window, 3, home, emptyList(), backgroundInUse = false))
+    }
+
+    @Test fun userGoingHomeOrToRecentsMeansTheUserOpenedWhatCameNext() {
+        // 桌面、最近任务这类任务冒到了最上面:用户在自己屏上动了手
+        val launcher = arrival(task = 2, pkg = "com.recents", at = since + 300, standard = false)
+        assertTrue(decide(launcher, arrival(at = since + 900)).isEmpty())
+        // 用户回桌面、拉通知栏的窗口变化记成点按,一样算
+        assertTrue(decide(arrival(at = since + 900), taps = listOf(MainScreenSpill.Tap(since + 300, "com.android.systemui"))).isEmpty())
+    }
+
+    @Test fun previousTopShowingAgainIsNotTheUserActing() {
+        // 动作前就在最上面的桌面又露出来(挪走别的之后露出来的):不算用户动手
+        val top = arrival(task = 3, pkg = "com.home", at = since + 300, standard = false)
+        val next = arrival(at = since + 900)
+        assertEquals(listOf(PullBack(next)), decide(top, next))
+    }
+
+    @Test fun userActedLooksOnlyBeforeTheArrival() {
+        val taps = listOf(MainScreenSpill.Tap(since + 200, "com.x"))
+        assertTrue(MainScreenSpill.userActed(since, since + 500, taps, emptyList(), 3))
+        assertTrue(!MainScreenSpill.userActed(since, since + 100, taps, emptyList(), 3))
+        assertTrue(!MainScreenSpill.userActed(since + 300, since + 500, taps, emptyList(), 3))
     }
 
     @Test fun outsideTheWindowIsNotThisAction() {

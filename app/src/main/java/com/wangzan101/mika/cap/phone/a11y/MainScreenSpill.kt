@@ -11,6 +11,10 @@ package com.wangzan101.mika.cap.phone.a11y
  * 动作之前就在主屏最上面的那个任务又回到最上面(挪走开出来的那个后露出来的)。
  * 动作之前主屏最上面的任务里换了页面:是用户正在用的那个 App 被打开了,开在了用户眼前,不去动它([InUse])。
  * 冒出来的任务用户已经在点了(点的那个窗口属于它):也是用户在用,不挪。
+ * 用户在主屏上回了桌面、开了最近任务或下拉了通知栏(桌面、最近任务一类的任务冒上来,或 [userTaps] 里记下的那类窗口变化):
+ * 也算用户在动手,之后冒出来的当作用户自己开的。
+ * 本来就在用户主屏后台的任务被拉到前台([from] 为 [MAIN],这段时间里没有作为新任务出现过):是用户手上的 App,
+ * 不把它从用户眼前抽走,只报 [InUse];这种情况只认动作开始后 [backgroundWindowMs] 之内的(更晚的多半是用户自己切过去的)。
  * 纯逻辑。
  */
 internal object MainScreenSpill {
@@ -41,7 +45,8 @@ internal object MainScreenSpill {
 
     /**
      * [since] 动作开始的时刻,[windowMs] 之后冒出来的不算这个动作的;[topBefore] 动作开始时主屏最上面的任务;
-     * [userTaps] 用户在主屏上点东西的时刻和包。同一个任务只出一条(取最后一次),按先后排。
+     * [userTaps] 用户在主屏上点东西(或回桌面、开最近任务、下拉通知栏)的时刻和包。同一个任务只出一条(取最后一次),按先后排。
+     * [backgroundInUse]:本来就在主屏后台的任务被拉到前台时只报不挪(见类说明);用户在选择框里选中的那个([picked])不走这条。
      */
     fun decide(
         arrivals: List<Arrival>,
@@ -50,15 +55,30 @@ internal object MainScreenSpill {
         topBefore: Int,
         excluded: Set<String>,
         userTaps: List<Tap>,
+        backgroundWindowMs: Long = windowMs,
+        backgroundInUse: Boolean = true,
     ): List<Verdict> {
         val out = LinkedHashMap<Int, Verdict>()
-        for (a in arrivals.sortedBy { it.at }) {
-            val v = verdict(a, since, windowMs, topBefore, excluded, userTaps) ?: continue
+        val sorted = arrivals.sortedBy { it.at }
+        // 这段时间里作为新任务冒出来过的:之后再回到最上面仍是这次动作开出来的那个,不算用户后台里的
+        val fresh = HashSet<Int>()
+        for (a in sorted) {
+            val v = verdict(a, since, windowMs, topBefore, excluded, userTaps, sorted, fresh, backgroundWindowMs, backgroundInUse)
+            if (a.from == NEW && a.at in since..since + windowMs) fresh += a.taskId
+            v ?: continue
             out.remove(a.taskId)
             out[a.taskId] = v
         }
         return out.values.toList()
     }
+
+    /**
+     * 用户在 [since] 到 [until] 之间在主屏上动了手:点过东西(含回桌面、开最近任务、下拉通知栏的窗口变化),
+     * 或桌面、最近任务一类的任务冒到了最上面(动作之前就在最上面的 [topBefore] 又露出来不算:那是挪走别的之后露出来的)。
+     */
+    fun userActed(since: Long, until: Long, userTaps: List<Tap>, arrivals: List<Arrival>, topBefore: Int): Boolean =
+        userTaps.any { it.at in since..until } ||
+            arrivals.any { !it.standard && it.taskId != topBefore && it.at >= since && it.at < until }
 
     enum class Handling {
         /** 挪回 Mika 的屏(只挪任务,打开它的仍是原来那个 App)。 */
@@ -80,7 +100,8 @@ internal object MainScreenSpill {
      * 关掉之前 [slackMs] 内冒出来的也算。没有为 null。
      */
     fun picked(arrivals: List<Arrival>, chooserTask: Int, gone: Long, slackMs: Long, waitMs: Long, topBefore: Int, excluded: Set<String>): Arrival? =
-        decide(arrivals.filter { it.taskId != chooserTask }, gone - slackMs, waitMs + slackMs, topBefore, excluded, emptyList())
+        // 选中的就是用户本来那份后台任务时也要挪回来:是用户刚为这一步选的
+        decide(arrivals.filter { it.taskId != chooserTask }, gone - slackMs, waitMs + slackMs, topBefore, excluded, emptyList(), backgroundInUse = false)
             .filterIsInstance<PullBack>().lastOrNull()?.arrival
 
     /**
@@ -89,16 +110,23 @@ internal object MainScreenSpill {
      */
     fun needsUser(passwordField: Boolean, readable: Boolean, secureWindow: Boolean): Boolean = passwordField || (!readable && secureWindow)
 
-    private fun verdict(a: Arrival, since: Long, windowMs: Long, topBefore: Int, excluded: Set<String>, userTaps: List<Tap>): Verdict? {
+    private fun verdict(
+        a: Arrival, since: Long, windowMs: Long, topBefore: Int, excluded: Set<String>, userTaps: List<Tap>,
+        arrivals: List<Arrival>, fresh: Set<Int>, backgroundWindowMs: Long, backgroundInUse: Boolean,
+    ): Verdict? {
         if (a.at < since || a.at > since + windowMs) return null
         val pkg = a.packageName ?: return null
         if (!a.standard || pkg in excluded) return null
         if (a.from != NEW && a.from != MAIN) return null
         if (a.now != MAIN) return null
-        if (userTaps.any { it.at in since..a.at }) return null
+        if (userActed(since, a.at, userTaps, arrivals, topBefore)) return null
         // 用户已经在点它了(出现之后点在这一个 App 的窗口上):留给用户,不挪
         if (userTaps.any { it.at >= a.at && it.packageName == pkg }) return InUse(a)
         if (a.taskId == topBefore) return if (a.sameTask) InUse(a) else null
+        // 用户主屏后台本来就有的任务被拉到前台:那是用户手上的 App,不从用户眼前抽走
+        if (backgroundInUse && a.from == MAIN && a.taskId !in fresh) {
+            return if (a.at > since + backgroundWindowMs) null else InUse(a)
+        }
         return PullBack(a)
     }
 }
