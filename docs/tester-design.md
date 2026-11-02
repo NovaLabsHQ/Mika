@@ -217,7 +217,7 @@ Runs from the board use `RunOrigin.Channel` with the attendance from the spec:
 
 | Spec `attendance` | Provenance | Questions | Confirmations | Payment |
 |---|---|---|---|---|
-| `reachable` (default) | `Channel` + `Reachable` | comment + `mika-needs-input`, wait `ask_timeout_min` | never (channel has `confirms = false`) → treated as "no" | denied (`ApprovalPolicy`: not `Ui`) |
+| `reachable` (default) | `Channel` + `Reachable` | comment + `mika-needs-input`, wait `ask_timeout_min: N` minutes | never (channel has `confirms = false`) → treated as "no" | denied (`ApprovalPolicy`: not `Ui`) |
 | `unattended` | `Channel` + `Unattended` | tools removed by `RunAssembler` | removed | denied |
 
 - **Input ask** (`Delivery.Ask` kind Input): the phone posts
