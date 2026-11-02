@@ -1,6 +1,10 @@
 package com.wangzan101.mika.cap.phone.a11y
 
 import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.InUse
+import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.OnItsOwn
+import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.SelfLaunch
+import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.SelfSignals
+import org.junit.Assert.assertNull
 import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.PullBack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -17,8 +21,59 @@ class MainScreenSpillTest {
         sameTask: Boolean = false, standard: Boolean = true, now: Int = MainScreenSpill.MAIN, user: Int = 0,
     ) = MainScreenSpill.Arrival(task, pkg, user, at, from, sameTask, standard, now)
 
-    private fun decide(vararg a: MainScreenSpill.Arrival, topBefore: Int = 3, taps: List<MainScreenSpill.Tap> = emptyList()) =
-        MainScreenSpill.decide(a.toList(), since, window, topBefore, home, taps, backgroundWindowMs = background)
+    private fun decide(
+        vararg a: MainScreenSpill.Arrival, topBefore: Int = 3, taps: List<MainScreenSpill.Tap> = emptyList(),
+        self: SelfSignals = SelfSignals.NONE,
+    ) = MainScreenSpill.decide(a.toList(), since, window, topBefore, home, taps, backgroundWindowMs = background, self = self)
+
+    @Test fun appThatNotifiedRightBeforeItCameUpOpenedOnItsOwn() {
+        // Instacart Shopper 来单:先发通知再自己弹出窗口,用户没动手。不挪,报成自己开的
+        val a = arrival(pkg = "com.instacart.shopper", at = since + 1_200)
+        val self = SelfSignals(notified = mapOf("com.instacart.shopper" to since + 900), actionEnded = since + 400)
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.Notified)), decide(a, self = self))
+        // 通知太早(10 秒前)的不算
+        val old = SelfSignals(notified = mapOf("com.instacart.shopper" to a.at - MainScreenSpill.NOTIFY_LEAD_MS - 1), actionEnded = since + 400)
+        assertEquals(listOf(PullBack(a)), decide(a, self = old))
+        // 通知比窗口稍晚到也算
+        val after = SelfSignals(notified = mapOf("com.instacart.shopper" to a.at + 1_000))
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.Notified)), decide(a, self = after))
+    }
+
+    @Test fun appOtherThanTheOneBeingOpenedOpenedOnItsOwn() {
+        val a = arrival(pkg = "com.instacart.shopper")
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.NotTheTarget)), decide(a, self = SelfSignals(expected = "com.android.chrome")))
+        // 开的就是它:照常挪回来
+        val b = arrival(pkg = "com.android.chrome")
+        assertEquals(listOf(PullBack(b)), decide(b, self = SelfSignals(expected = "com.android.chrome")))
+    }
+
+    @Test fun appComingUpLongAfterTheActionEndedOpenedOnItsOwn() {
+        val a = arrival(at = since + 5_000)
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.AfterTheAction)), decide(a, self = SelfSignals(actionEnded = since + 1_000)))
+        val soon = arrival(at = since + 1_500)
+        assertEquals(listOf(PullBack(soon)), decide(soon, self = SelfSignals(actionEnded = since + 1_000)))
+    }
+
+    @Test fun knownSelfLauncherOpenedOnItsOwn() {
+        val a = arrival(pkg = "com.instacart.shopper")
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.Known)), decide(a, self = SelfSignals(known = setOf("com.instacart.shopper"))))
+    }
+
+    @Test fun systemPackagesAreNeverTreatedAsSelfLaunched() {
+        // 系统的选择器、弹窗另有处理(留给用户选、留在用户屏上),不按「自己开的」判
+        val a = arrival(pkg = "com.android.intentresolver")
+        val self = SelfSignals(expected = "com.chat", actionEnded = since, notified = mapOf("com.android.intentresolver" to a.at), system = { it.startsWith("com.android.") })
+        assertNull(MainScreenSpill.selfLaunched(a, self))
+        assertEquals(listOf(PullBack(a)), decide(a, self = self))
+    }
+
+    @Test fun userInputStillWinsOverSelfLaunchSignals() {
+        // 用户在主屏上点了东西:是用户开的,不说自己开的
+        val a = arrival(pkg = "com.instacart.shopper", at = since + 1_200)
+        val taps = listOf(MainScreenSpill.Tap(since + 1_000, "com.home"))
+        val self = SelfSignals(notified = mapOf("com.instacart.shopper" to since + 900))
+        assertTrue(decide(a, taps = taps, self = self).none { it is OnItsOwn })
+    }
 
     @Test fun newTaskOnTheMainScreenRightAfterTheActionIsPulledBack() {
         assertEquals(listOf(PullBack(arrival())), decide(arrival()))

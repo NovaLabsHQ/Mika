@@ -640,7 +640,7 @@ class AndroidScreen(
         val before = if (opened) topWindowPackage().takeIf { it != chooserPackage } else null
         val id = display.get().displayId
         // 打开 App 也可能顺带在用户屏上开出别的(有的 App 一启动就拉起另一个):照样盯着
-        val w = armSpillWatch()
+        val w = armSpillWatch(expected = packageName)
         fun launch() = when {
             user != null -> shell.startAppInUser(id, packageName, user, cold)
             cold -> shell.restartApp(id, packageName)
@@ -675,7 +675,7 @@ class AndroidScreen(
         }
         val before = if (opened) topWindowPackage().takeIf { it != chooserPackage } else null
         val id = display.get().displayId
-        val w = armSpillWatch()
+        val w = armSpillWatch(expected = packageName)
         when (runCatching { shell.startShare(id, packageName, text) }.getOrDefault(ShellService.START_ERROR)) {
             ShellService.START_OK -> Unit
             ShellService.START_IN_USE_ON_MAIN -> return@acting ActionResult.Failed("app_in_use_by_user")
@@ -826,7 +826,7 @@ class AndroidScreen(
         if (checkOtherTasks && expected != null && !reserve(expected)) return@acting IN_USE_BY_OTHER
         val before = ScreenReader.topPackage(windows())
         val beforeTree = treeHash()
-        val w = armSpillWatch()
+        val w = armSpillWatch(expected = expected)
         when (shell.startView(id, action, uri, packageName)) {
             ShellService.START_OK -> Unit
             ShellService.START_IN_USE_ON_MAIN -> return@acting ActionResult.Failed("app_in_use_by_user")
@@ -904,7 +904,7 @@ class AndroidScreen(
         val alarmBefore = runCatching { alarms?.nextAlarmClock?.triggerTime }
         val id = display.get().displayId
         val topBefore = ScreenReader.topPackage(windows())
-        val w = armSpillWatch()
+        val w = armSpillWatch(expected = pkg)
         // 接手的页面要求的权限(设闹钟)shell 可能没有:备一个以 Mika 身份启动的
         val asMika = PendingIntent.getActivity(a11y, SYSTEM_ACTION_REQUEST, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         when (runCatching { shell.startSystemAction(id, intent, asMika) }.getOrDefault(ShellService.START_ERROR)) {
@@ -1041,7 +1041,9 @@ class AndroidScreen(
      * 这段时间里用户在自己屏上切 App 就不会被当成动作开出来的。
      */
     private suspend fun verified(relocatedTo: String? = null, opensApps: Boolean = true, action: suspend () -> Boolean): ActionResult {
-        lateSpill()?.let { return ActionResult.Failed("opened_elsewhere", hintLateSpill(it.opened)) }
+        // 自己开出来的、动不得的(隐私名单里的)留在用户屏上,Mika 屏没变:不挡这个动作,报在它的结果里
+        val late = lateSpill()
+        if (late != null && !late.opened.leftOnUserScreenQuietly) return ActionResult.Failed("opened_elsewhere", hintLateSpill(late.opened))
         val beforeTree = treeHash()
         val beforeFrame = frameSignature()
         val w = if (opensApps) armSpillWatch() else null
@@ -1051,14 +1053,19 @@ class AndroidScreen(
         } ?: return ActionResult.Failed("action_failed")
         // 从挪回来的任务里又打开了一个的,一并算进来
         val profile = adoptFromAdopted(w)
-        val spill = takeSpill(w)
+        val spill = takeSpill(w) ?: late
         return ok(changed = changed || spill?.opened?.pulledBack == true, relocatedTo = relocatedTo, spill = spill, inProfile = profile)
     }
 
     // ---------- 开到用户主屏上的 ----------
 
-    /** 一次动作的盯梢:[since] 开始的时刻,[topBefore] 那时主屏最上面的任务,[agentTopBefore] 那时 Mika 屏上最上面的任务。 */
-    private class Watch(val since: Long, val topBefore: Int, val agentTopBefore: Int)
+    /**
+     * 一次动作的盯梢:[since] 开始的时刻,[topBefore] 那时主屏最上面的任务,[agentTopBefore] 那时 Mika 屏上最上面的任务,
+     * [expected] 这个动作要打开、分享给的 App(点按等为 null);[endedAt] 动作做完的时刻(第一次判时记下)。
+     */
+    private class Watch(val since: Long, val topBefore: Int, val agentTopBefore: Int, val expected: String? = null) {
+        @Volatile var endedAt: Long? = null
+    }
 
     /** 挪回来的 App 和(系统问打开哪一个时)认出的选项。 */
     private class Spill(val opened: OpenedElsewhere, val chooser: LaunchChoice?)
@@ -1106,6 +1113,10 @@ class AndroidScreen(
 
     /** 用户在主屏上点东西的时刻和包(只在动作前后那一小段里记)。 */
     private val userTaps = java.util.concurrent.ConcurrentLinkedDeque<MainScreenSpill.Tap>()
+
+    /** 盯梢期间各 App 最近一次发通知的时刻(判「App 自己开出来」、分辨通知横幅用)。 */
+    private val notifiedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    @Volatile private var lastNotificationAt = Long.MIN_VALUE / 2
     private val spillScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     @Volatile private var tapWatch: Job? = null
     @Volatile private var tapWatchUntil = 0L
@@ -1120,29 +1131,45 @@ class AndroidScreen(
     }
 
     /** 动作之前:请内置助手盯着主屏,记下此刻两块屏最上面的任务;没有屏、接管中或助手不支持时为 null(不盯)。 */
-    private fun armSpillWatch(): Watch? {
+    private fun armSpillWatch(expected: String? = null): Watch? {
         if (!opened || handedOver()) return null
         val since = SystemClock.uptimeMillis()
         watchUserTaps(since + SPILL_WINDOW_MS)
         val top = runCatching { shell.watchMainScreen(SPILL_WINDOW_MS.toInt()) }.getOrNull() ?: return null
         val agentTop = runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
-        return Watch(since, top, agentTop).also { watch = it }
+        return Watch(since, top, agentTop, expected).also { watch = it }
     }
 
-    /** 盯梢期间记下用户在主屏上的点按(Mika 自己的浮层不算);到期自己停。 */
+    /**
+     * 盯梢期间记下用户在主屏上的亲手操作(点按、回桌面、开最近任务、拉下通知栏;按 [MainScreenInput] 判,
+     * 冒出来的通知横幅不算),和各 App 发通知的时刻;到期自己停。
+     */
     private fun watchUserTaps(until: Long) {
         tapWatchUntil = maxOf(tapWatchUntil, until)
         if (tapWatch?.isActive == true) return
         tapWatch = spillScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val notifying = launch(start = CoroutineStart.UNDISPATCHED) {
+                a11y.notificationEvents().collect { n ->
+                    val now = SystemClock.uptimeMillis()
+                    lastNotificationAt = now
+                    n.packageName?.let { notifiedAt[it] = now }
+                }
+            }
             val collecting = launch(start = CoroutineStart.UNDISPATCHED) {
                 a11y.eventsFor(Display.DEFAULT_DISPLAY).collect { e ->
                     val pkg = e.packageName?.toString()
-                    val clicked = e.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED || e.eventType == AccessibilityEvent.TYPE_VIEW_LONG_CLICKED
-                    // 回桌面、开最近任务、下拉通知栏:桌面或系统界面的窗口换了,也算用户在动手(Mika 自己刚挪过任务的那一下除外)
-                    val userMoved = e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null &&
-                        (pkg in launchers || pkg == SYSTEM_UI) && SystemClock.uptimeMillis() - ownMoveAt > OWN_MOVE_QUIET_MS
-                    if ((clicked || userMoved) && pkg != a11y.packageName) {
-                        userTaps.addLast(MainScreenSpill.Tap(SystemClock.uptimeMillis(), e.packageName?.toString()))
+                    val now = SystemClock.uptimeMillis()
+                    val input = MainScreenInput.Event(
+                        type = e.eventType,
+                        packageName = pkg,
+                        className = e.className?.toString(),
+                        text = e.text.joinToString(" ").takeIf { it.isNotBlank() } ?: e.contentDescription?.toString(),
+                        heightShare = if (pkg == SYSTEM_UI) windowHeightShare(e.windowId) else null,
+                        sinceNotificationMs = (now - lastNotificationAt).takeIf { it >= 0 && lastNotificationAt > Long.MIN_VALUE / 2 },
+                        sinceOwnMoveMs = now - ownMoveAt,
+                    )
+                    if (MainScreenInput.isUserInput(input, launchers, SYSTEM_UI, a11y.packageName, OWN_MOVE_QUIET_MS)) {
+                        userTaps.addLast(MainScreenSpill.Tap(now, pkg))
                         while (userTaps.size > MAX_USER_TAPS) userTaps.pollFirst()
                     }
                 }
@@ -1153,7 +1180,17 @@ class AndroidScreen(
                 delay(left)
             }
             collecting.cancel()
+            notifying.cancel()
         }
+    }
+
+    /** 主屏上窗口 [windowId] 占屏高的比例;找不到为 null。 */
+    private fun windowHeightShare(windowId: Int): Float? {
+        if (windowId == -1) return null
+        val w = a11y.windowsOn(Display.DEFAULT_DISPLAY).firstOrNull { it.id == windowId } ?: return null
+        val r = Rect().also(w::getBoundsInScreen)
+        val h = a11y.resources.displayMetrics.heightPixels
+        return if (h <= 0) null else r.height().toFloat() / h
     }
 
     /**
@@ -1166,8 +1203,13 @@ class AndroidScreen(
         val arrivals = parseArrivals(b)
         arrivals.maxOfOrNull { it.at }?.let { consumed = maxOf(consumed, it) }
         var last: Spill? = null
-        val verdicts = MainScreenSpill.decide(arrivals, w.since, SPILL_WINDOW_MS, w.topBefore, notSpills, userTaps.toList(), backgroundWindowMs = BACKGROUND_WINDOW_MS)
-        // 挪过一次的、离开过 Mika 屏的、「别动这些 App」里的:只报不挪
+        val ended = w.endedAt ?: SystemClock.uptimeMillis().also { w.endedAt = it }
+        val self = MainScreenSpill.SelfSignals(
+            expected = w.expected, known = ledger.selfLaunchers(), notified = HashMap(notifiedAt), actionEnded = ended,
+            system = ::isSystemPackage,
+        )
+        val verdicts = MainScreenSpill.decide(arrivals, w.since, SPILL_WINDOW_MS, w.topBefore, notSpills, userTaps.toList(), backgroundWindowMs = BACKGROUND_WINDOW_MS, self = self)
+        // 挪过一次的、离开过 Mika 屏的:只报不挪;「别动这些 App」里的、自己开出来的:报成自己开的,接着做
         for (v in verdicts.map(ledger::limit)) {
             val a = v.arrival
             val pkg = a.packageName ?: continue
@@ -1175,6 +1217,10 @@ class AndroidScreen(
                 // 系统问打开哪一个的先按选择框处理;要用户亲手处理的弹窗(登录验证、账号确认一类)留在主屏,不挪到 Mika 的屏上
                 is MainScreenSpill.PullBack -> leaveForUser(a, pkg, w) ?: leavePopup(a, pkg) ?: pullBack(a, pkg) ?: last
                 is MainScreenSpill.InUse -> Spill(OpenedElsewhere(pkg, appLabel(pkg), pulledBack = false, inProfile = inProfileOf(pkg, a.userId)), null)
+                is MainScreenSpill.OnItsOwn -> {
+                    Log.i(TAG, "$pkg opened on the main screen on its own (${v.why}); left there")
+                    Spill(OpenedElsewhere(pkg, appLabel(pkg), pulledBack = false, onItsOwn = true, leftAlone = v.why == MainScreenSpill.SelfLaunch.LeaveAlone), null)
+                }
             }
         }
         if (last != null) Log.i(TAG, "opened on the main screen after an action: ${last.opened}")
@@ -1218,6 +1264,8 @@ class AndroidScreen(
         guard.forget(task)
         adopted -= task
         returned += pkg
+        // 自己冒到 Mika 屏上的:这次运行里它再开到主屏上也当作自己开的,不挪
+        ledger.selfLaunched(pkg)
         Log.i(TAG, "returned $pkg (task $task) from Mika's screen to the main screen")
         pkg
     }
@@ -1449,6 +1497,8 @@ class AndroidScreen(
             o.byUser -> "$name needed the user; they handled it on their own screen and tapped continue. It is now in front on Mika's screen. Observe before acting."
             o.needsUser && o.onUserScreen -> "It was $name: a popup on the user's screen that needs them (a sign-in, verification or confirmation step). " +
                 "It was left there on purpose; do not repeat the action. Call hand_to_user so they can finish it, then observe before acting."
+            o.onItsOwn -> "It was $name: it opened on the user's screen on its own (not because of Mika's action) and was left there. " +
+                "This is not the user taking over: do not call hand_to_user for it. The previous action may not have done anything: observe Mika's screen and carry on with the task."
             o.pulledBack -> "It was $name: it came up on the user's screen and was moved to Mika's screen, where it is now in front.$copy " +
                 "It was not necessarily opened by the app this task is working in. Observe before acting; if it is not part of the task, go back."
             else -> "It was $name, which the user is using on their own screen, so it was left there. " +

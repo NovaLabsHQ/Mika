@@ -261,6 +261,15 @@ This action opened {{app}} as a popup on the user's own screen that needs them (
 ## spill.in_use
 This action opened {{app}}, which the user is using on their own screen, so it opened there in front of them and Mika left it alone. Do not repeat the action. Call hand_to_user with reason other so the user can do that step there, or wait and try again later.
 
+## spill.on_its_own
+{{app}} opened on the user's own screen on its own, not because of this action (the app pops up its own windows), so Mika left it there. This is not the user taking over and not something for the user to do: do not call hand_to_user for it and do not repeat the action because of it. Observe Mika's screen and carry on with the task.
+
+## spill.left_alone
+{{app}} opened on the user's own screen on its own, not because of this action. It is on the user's list of apps Mika leaves alone, so Mika left it there. This is not the user taking over: do not call hand_to_user for it and do not repeat the action because of it. Observe Mika's screen and carry on with the task.
+
+## spill.blocked
+{{app}} opened on the user's own screen. It is on the user's privacy list of sensitive apps, so Mika does not move, read or operate it and left it there. Do not try to open or use it, and do not repeat the action. Carry on with the task without it; if the task needs that app, tell the user it is on their privacy list (Settings › Privacy › Sensitive apps).
+
 ## profile.main_not_requested
 This is the main app, not the requested copy.
 

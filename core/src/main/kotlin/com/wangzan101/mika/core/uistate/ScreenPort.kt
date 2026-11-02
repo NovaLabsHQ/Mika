@@ -100,13 +100,20 @@ data class ScreenSnapshot(
  * 选之前任务停着等;[app] 是问的那个 App 的名字(认得出时)。
  * [closed]:用户把那个问题关了,什么也没打开。[byUser]:选出来的 App 要用户亲手处理,用户在自己屏上处理完、点了继续。
  * [needsUser]:冒到主屏上的是要用户亲手处理的弹窗(登录验证、账号确认、付款确认一类),留在主屏给他们点。
+ * [onItsOwn]:不是这个动作开的,是 App 自己开出来的(自己弹窗口的 App,见 MainScreenSpill.selfLaunched),留在主屏没动;
+ * 不是用户接手,模型接着做,不交给用户。[leftAlone]:它在设置的「别动这些 App」里(也按自己开的说)。
+ * [blocked]:它在隐私名单上(见 [com.wangzan101.mika.core.privacy.SensitiveApps]),Mika 不挪、不看它。
  */
 data class OpenedElsewhere(
     val packageName: String, val app: String?, val pulledBack: Boolean, val inProfile: String? = null, val picker: Boolean = false,
     val closed: Boolean = false, val byUser: Boolean = false, val needsUser: Boolean = false,
+    val onItsOwn: Boolean = false, val leftAlone: Boolean = false, val blocked: Boolean = false,
 ) {
     /** 此刻还在用户的主屏上(用户正用着,或系统正在问用户)。 */
     val onUserScreen: Boolean get() = !pulledBack && !closed && !byUser
+
+    /** 留在用户屏上、不用用户管、也不挡模型下一个动作的:自己开出来的、隐私名单上的。 */
+    val leftOnUserScreenQuietly: Boolean get() = !pulledBack && (onItsOwn || blocked)
 
     fun toJson(): JsonObject = buildJsonObject {
         put("package", packageName)
@@ -118,6 +125,9 @@ data class OpenedElsewhere(
         if (picker) put("picker", true)
         if (closed) put("closed", true)
         if (byUser) put("byUser", true)
+        if (onItsOwn) put("onItsOwn", true)
+        if (leftAlone) put("leftAlone", true)
+        if (blocked) put("blockedByPrivacy", true)
     }
 
     companion object {

@@ -88,6 +88,23 @@ class OpenedElsewhereTest {
         assertFalse(hint, Feedback["tap_unchanged"] in hint)
     }
 
+    @Test fun appThatOpenedOnItsOwnIsNotTheUserTakingOver() = runTest {
+        // 回归:自己弹窗口的 App(或「别动这些 App」里的)冒到主屏上,以前说用户正用着、叫模型交给用户
+        val c = tap(ActionResult.Ok(changed = true, opened = OpenedElsewhere("com.shopper", "Shopper", pulledBack = false, onItsOwn = true)))
+        val o = c["opened"]!!.jsonObject
+        assertEquals("true", o["onItsOwn"]!!.jsonPrimitive.content)
+        val hint = c.hint()
+        assertTrue(hint, Feedback.format("spill.on_its_own", "app" to "Shopper") in hint)
+        assertFalse(hint, Feedback.format("spill.in_use", "app" to "Shopper") in hint)
+        assertFalse(hint, "call hand_to_user with" in hint)
+        // 不是这个动作开的,不算它的效果
+        assertFalse(c["effect"]?.jsonObject?.get("kind")?.jsonPrimitive?.content == "place_changed")
+
+        val left = tap(ActionResult.Ok(changed = true, opened = OpenedElsewhere("com.shopper", "Shopper", pulledBack = false, onItsOwn = true, leftAlone = true)))
+        assertTrue(Feedback.format("spill.left_alone", "app" to "Shopper") in left.hint())
+        assertEquals("true", left["opened"]!!.jsonObject["leftAlone"]!!.jsonPrimitive.content)
+    }
+
     @Test fun otherProfileIsFlagged() = runTest {
         val c = tap(ActionResult.Ok(changed = true, inProfile = OpenedElsewhere.OTHER_PROFILE))
         assertEquals("other", c["inProfile"]!!.jsonPrimitive.content)

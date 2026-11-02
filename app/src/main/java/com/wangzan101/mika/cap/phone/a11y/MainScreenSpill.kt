@@ -15,6 +15,8 @@ package com.wangzan101.mika.cap.phone.a11y
  * 也算用户在动手,之后冒出来的当作用户自己开的。
  * 本来就在用户主屏后台的任务被拉到前台([from] 为 [MAIN],这段时间里没有作为新任务出现过):是用户手上的 App,
  * 不把它从用户眼前抽走,只报 [InUse];这种情况只认动作开始后 [backgroundWindowMs] 之内的(更晚的多半是用户自己切过去的)。
+ * 本该挪回的,先按 [selfLaunched] 看是不是 App 自己开出来的(Instacart Shopper 一类自己弹出新窗口的):是就不挪,
+ * 判 [OnItsOwn],告诉模型它是自己开的、接着做。
  * 纯逻辑。
  */
 internal object MainScreenSpill {
@@ -42,10 +44,68 @@ internal object MainScreenSpill {
     data class PullBack(override val arrival: Arrival) : Verdict
     /** 开到了用户正在主屏上用着的那个 App 里:不动它,告诉模型。 */
     data class InUse(override val arrival: Arrival) : Verdict
+    /** 不是这个动作开的,是 App 自己开出来的([why] 凭什么认的):不挪,告诉模型它自己开的、接着做,不用交给用户。 */
+    data class OnItsOwn(override val arrival: Arrival, val why: SelfLaunch) : Verdict
+
+    /** 认出「App 自己开出来」的依据,按 [selfLaunched] 里的先后。 */
+    enum class SelfLaunch {
+        /** 设置里「别动这些 App」里的(由 [PullBackLedger.limit] 判)。 */
+        LeaveAlone,
+        /** 这次运行里已知会自己开出来的:自己冒到过 Mika 的屏上被送回去,或之前已判过一次自己开的。 */
+        Known,
+        /** 冒出来之前不久(或同时)它发过通知:全屏通知、来单提醒一类,App 自己把页面拉起来。 */
+        Notified,
+        /** 这个动作是打开、分享给另一个 App:冒出来的既不是那个 App,也不是系统的。 */
+        NotTheTarget,
+        /** 动作做完之后过了 [SelfSignals.lateMs] 才冒出来(动作自己开出来的,任务在一两秒内就上来)。 */
+        AfterTheAction,
+    }
+
+    /**
+     * 判「App 自己开出来」要的信号(都可以没有):[expected] 这个动作要打开、分享给的 App(点按等不知道开谁的为 null);
+     * [known] 这次运行里已知会自己开出来的 App;[notified] 各 App 最近一次发通知的时刻;[actionEnded] 动作做完的时刻;
+     * [system] 是不是系统的包(系统的选择器、弹窗另有处理,从不按这里判)。
+     */
+    data class SelfSignals(
+        val expected: String? = null,
+        val known: Set<String> = emptySet(),
+        val notified: Map<String, Long> = emptyMap(),
+        val actionEnded: Long? = null,
+        val system: (String) -> Boolean = { false },
+        val notifyLeadMs: Long = NOTIFY_LEAD_MS,
+        val notifySlackMs: Long = NOTIFY_SLACK_MS,
+        val lateMs: Long = LATE_MS,
+    ) {
+        companion object { val NONE = SelfSignals() }
+    }
+
+    /** 冒出来之前多久内发过通知算它自己拉起来的。 */
+    const val NOTIFY_LEAD_MS = 10_000L
+    /** 通知可能比页面晚一点到:冒出来之后这么久内的也算。 */
+    const val NOTIFY_SLACK_MS = 1_500L
+    /** 动作做完之后过了这么久才冒出来的,当作自己开的。 */
+    const val LATE_MS = 3_000L
+
+    /**
+     * 本该挪回的 [a] 是不是 App 自己开出来的(不是这个动作开的);不是为 null。系统的包从不算(选择器、系统弹窗另有处理)。
+     * 依次看:这次运行里已知会自己开([SelfLaunch.Known]);冒出来前 [SelfSignals.notifyLeadMs] 到之后 [SelfSignals.notifySlackMs]
+     * 内发过通知([SelfLaunch.Notified]);动作要开的是另一个 App([SelfLaunch.NotTheTarget]);
+     * 动作做完 [SelfSignals.lateMs] 之后才冒出来([SelfLaunch.AfterTheAction])。用户动过手的、用户正用着的在这之前就判掉了。
+     */
+    fun selfLaunched(a: Arrival, s: SelfSignals): SelfLaunch? {
+        val pkg = a.packageName ?: return null
+        if (s.system(pkg)) return null
+        if (pkg in s.known) return SelfLaunch.Known
+        s.notified[pkg]?.let { t -> if (t in a.at - s.notifyLeadMs..a.at + s.notifySlackMs) return SelfLaunch.Notified }
+        if (s.expected != null && pkg != s.expected) return SelfLaunch.NotTheTarget
+        if (s.actionEnded != null && a.at > s.actionEnded + s.lateMs) return SelfLaunch.AfterTheAction
+        return null
+    }
 
     /**
      * [since] 动作开始的时刻,[windowMs] 之后冒出来的不算这个动作的;[topBefore] 动作开始时主屏最上面的任务;
-     * [userTaps] 用户在主屏上点东西(或回桌面、开最近任务、下拉通知栏)的时刻和包。同一个任务只出一条(取最后一次),按先后排。
+     * [userTaps] 用户在主屏上点东西(或回桌面、开最近任务、亲手拉下通知栏;冒出来的通知横幅不算,见 [MainScreenInput])的时刻和包。
+     * [self] 判「App 自己开出来」的信号(见 [selfLaunched])。同一个任务只出一条(取最后一次),按先后排。
      * [backgroundInUse]:本来就在主屏后台的任务被拉到前台时只报不挪(见类说明);用户在选择框里选中的那个([picked])不走这条。
      */
     fun decide(
@@ -57,13 +117,14 @@ internal object MainScreenSpill {
         userTaps: List<Tap>,
         backgroundWindowMs: Long = windowMs,
         backgroundInUse: Boolean = true,
+        self: SelfSignals = SelfSignals.NONE,
     ): List<Verdict> {
         val out = LinkedHashMap<Int, Verdict>()
         val sorted = arrivals.sortedBy { it.at }
         // 这段时间里作为新任务冒出来过的:之后再回到最上面仍是这次动作开出来的那个,不算用户后台里的
         val fresh = HashSet<Int>()
         for (a in sorted) {
-            val v = verdict(a, since, windowMs, topBefore, excluded, userTaps, sorted, fresh, backgroundWindowMs, backgroundInUse)
+            val v = verdict(a, since, windowMs, topBefore, excluded, userTaps, sorted, fresh, backgroundWindowMs, backgroundInUse, self)
             if (a.from == NEW && a.at in since..since + windowMs) fresh += a.taskId
             v ?: continue
             out.remove(a.taskId)
@@ -112,7 +173,7 @@ internal object MainScreenSpill {
 
     private fun verdict(
         a: Arrival, since: Long, windowMs: Long, topBefore: Int, excluded: Set<String>, userTaps: List<Tap>,
-        arrivals: List<Arrival>, fresh: Set<Int>, backgroundWindowMs: Long, backgroundInUse: Boolean,
+        arrivals: List<Arrival>, fresh: Set<Int>, backgroundWindowMs: Long, backgroundInUse: Boolean, self: SelfSignals,
     ): Verdict? {
         if (a.at < since || a.at > since + windowMs) return null
         val pkg = a.packageName ?: return null
@@ -127,6 +188,6 @@ internal object MainScreenSpill {
         if (backgroundInUse && a.from == MAIN && a.taskId !in fresh) {
             return if (a.at > since + backgroundWindowMs) null else InUse(a)
         }
-        return PullBack(a)
+        return selfLaunched(a, self)?.let { OnItsOwn(a, it) } ?: PullBack(a)
     }
 }

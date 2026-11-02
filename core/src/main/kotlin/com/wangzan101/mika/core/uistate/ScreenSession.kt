@@ -370,7 +370,10 @@ internal class ScreenSession(
             switchedTo = (c["app_switched"] as? JsonPrimitive)?.content,
             verified = c["verification"] == JsonPrimitive("match"),
             loading = c["settled"] == JsonPrimitive(false),
-            onUserScreen = opened?.takeIf { it["onUserScreen"] == JsonPrimitive(true) }?.let { (it["package"] as? JsonPrimitive)?.content },
+            // 自己开出来的、隐私名单上的不是这个动作开的:不算动作的效果
+            onUserScreen = opened?.takeIf {
+                it["onUserScreen"] == JsonPrimitive(true) && it["onItsOwn"] != JsonPrimitive(true) && it["blockedByPrivacy"] != JsonPrimitive(true)
+            }?.let { (it["package"] as? JsonPrimitive)?.content },
         )
         val portWaited = r.changed != null || "settled" in c
         val fresh = reads > readsAtAction
