@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="voice_title">语音</string>
+    <string name="voice_settings_sub">不打字，直接说给 Mika 听</string>
+    <string name="voice_group_speech">语音识别</string>
+    <string name="voice_group_reply">朗读回答</string>
+    <string name="voice_phone">手机自带识别</string>
+    <string name="voice_phone_detail">不用下载，一次只认一种语言</string>
+    <string name="voice_parakeet">Parakeet v3</string>
+    <string name="voice_parakeet_detail">在手机上运行，自己认出是哪种语言 · %1$s · 25 种欧洲语言</string>
+    <string name="voice_scribe">ElevenLabs Scribe</string>
+    <string name="voice_supertonic">Supertonic 3</string>
+    <string name="voice_supertonic_detail">在手机上运行 · %1$s · %2$s</string>
+    <string name="voice_female_1">女声 1</string>
+    <string name="voice_elevenlabs">ElevenLabs</string>
+    <string name="voice_add_key">填入 API Key</string>
+    <string name="voice_key_ready">用你的 API Key，录音发给 ElevenLabs</string>
+    <string name="voice_reply_key_ready">用你的 API Key，回答发给 ElevenLabs</string>
+    <string name="voice_coming_soon">即将推出</string>
+    <string name="voice_download_note">模型只需下载一次，最好连着 Wi-Fi</string>
+    <string name="voice_wifi_only">只在 Wi-Fi 下下载</string>
+    <string name="voice_key_row">ElevenLabs API Key</string>
+    <string name="voice_key_saved">已填</string>
+    <string name="voice_key_missing">未填</string>
+    <string name="voice_key_sheet_sub">加密存在这台手机上，只发给 ElevenLabs。用量记在你的 ElevenLabs 账户上。</string>
+    <string name="voice_key_label">Key</string>
+    <string name="voice_key_hint">粘贴你的 Key</string>
+    <string name="voice_key_save">保存</string>
+    <string name="voice_key_remove">删除 Key</string>
+    <string name="voice_save_failed">没存上，请再试一次。</string>
+    <string name="voice_reply_foot">朗读回答还没接进对话，这里的选择先留着，接上后就用它。</string>
+</resources>

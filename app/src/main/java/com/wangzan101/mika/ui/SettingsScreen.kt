@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页。 */
-private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, Capsule, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Developer, RunStats }
+private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, Capsule, Voice, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 基本 / 隐私与数据 / 高级 / 关于四组。各子页面在这里切换(返回键先回首页),
@@ -159,6 +159,7 @@ fun SettingsScreen(
             onOpenPhoneOps = { page = SettingsPage.PhoneOps },
             onOpenDuringWork = { page = SettingsPage.DuringWork },
             capsuleMode = capsuleMode, onOpenCapsule = { page = SettingsPage.Capsule },
+            onOpenVoice = { page = SettingsPage.Voice },
             onOpenNotifications = { notificationsFrom = SettingsPage.Home; page = SettingsPage.Notifications },
             language = language, onOpenLanguage = { page = SettingsPage.Language },
             onOpenMemory = onOpenMemory,
@@ -184,6 +185,7 @@ fun SettingsScreen(
             operatingPace = operatingPace, onOperatingPace = { flags.setOperatingPace(it); operatingPace = it },
         )
         SettingsPage.Language -> LanguageScreen(language, onLanguage = { AppLanguage.set(context, it) }, onBack = toHome)
+        SettingsPage.Voice -> VoiceScreen((context.applicationContext as com.wangzan101.mika.MikaApp).voice, onBack = toHome)
         SettingsPage.Capsule -> CapsuleScreen(capsuleMode, onMode = { flags.setCapsuleMode(it); capsuleMode = it }, onBack = toHome)
         // 没有数据时首页不显示入口,走不到这一页
         SettingsPage.WebSites -> webSites?.let { WebSitesScreen(it, onBack = toHome) }
@@ -245,6 +247,8 @@ fun SettingsContent(
     /** 悬浮胶囊此刻的选择,写在「悬浮胶囊」一行的右边。 */
     capsuleMode: CapsuleMode = CapsuleMode.DEFAULT,
     onOpenCapsule: () -> Unit = {},
+    /** 设置 › 语音:说话代替打字、朗读回答。 */
+    onOpenVoice: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     /** 此刻选的界面语言,写在「语言」一行的右边。 */
     language: AppLanguage = AppLanguage.System,
@@ -292,6 +296,7 @@ fun SettingsContent(
                 RowValue(CapsuleSettingsCopy.label(capsuleMode))
                 RowChevron()
             }
+            ListRow(MikaIcons.Mic, stringResource(R.string.voice_title), stringResource(R.string.voice_settings_sub), onClick = onOpenVoice) { RowChevron() }
             ListRow(MikaIcons.Globe, stringResource(R.string.language_title), onClick = onOpenLanguage) {
                 RowValue(languageLabel(language))
                 RowChevron()

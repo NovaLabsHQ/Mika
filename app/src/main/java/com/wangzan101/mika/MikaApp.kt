@@ -94,6 +94,10 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
                 infoFile = { getExternalFilesDir(null)?.let { java.io.File(it, com.wangzan101.mika.core.mcp.McpUsb.INFO_FILE) } }),
             remoteTasks, com.wangzan101.mika.device.AndroidDeviceAccess(this) { phone.hub.shell.value })
     }
+    /** 语音设置:选哪个识别、朗读引擎;ElevenLabs 的 Key 和服务商的 Key 一样加密存(单独一把密钥)。 */
+    val voice by lazy {
+        com.wangzan101.mika.settings.VoiceSettings(java.io.File(filesDir, "settings"), com.wangzan101.mika.settings.KeystoreKeyCipher("mika-voice-keys"))
+    }
     val childRuns by lazy { FileChildRunStore(java.io.File(filesDir, "children-v3.json")) }
     override val tabBudget get() = resources.tabBudget
 
