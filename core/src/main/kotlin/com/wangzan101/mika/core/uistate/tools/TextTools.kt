@@ -24,6 +24,7 @@ import com.wangzan101.mika.core.tool.fail
 import com.wangzan101.mika.core.tool.int
 import com.wangzan101.mika.core.tool.okObj
 import com.wangzan101.mika.core.tool.str
+import com.wangzan101.mika.core.tool.returnedHint
 import com.wangzan101.mika.core.tool.switchHint
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -142,7 +143,8 @@ internal class TypeText(f: ScreenFamily) : ScreenTool(f, "type_text") {
                 typed.hint,
                 (if (enter) Feedback.format("type.unverified_enter", "unverified" to Feedback["type.unverified"]) else Feedback["type.unverified"])
                     .takeIf { v == Verification.UNKNOWN },
-                switched?.let { switchHint(it, typed.switchedByTarget).let { h -> if (enter) Feedback.format("type.switched_enter", "switch" to h) else h } },
+                switched?.let { switchHint(it, typed.switchedByTarget, typed.switchedPulledBack).let { h -> if (enter) Feedback.format("type.switched_enter", "switch" to h) else h } },
+                returnedHint(typed.returnedToUser),
             )
             if (hints.isNotEmpty()) put("hint", hints.joinToString(" "))
         }, changed = typed.changed)

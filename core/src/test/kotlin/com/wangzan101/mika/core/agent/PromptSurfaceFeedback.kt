@@ -78,6 +78,8 @@ internal object PromptSurfaceFeedback {
         add("scroll unchanged", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(changed = false, appSwitched = "com.y") }), "phone_scroll", """{"direction":"down"}""")
         add("tap switched app", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(changed = true, appSwitched = "com.y") }), "phone_tap", """{"x":1,"y":1}""")
         add("tap switched by target", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(changed = true, appSwitched = "com.y", switchedByTarget = true) }), "phone_tap", """{"x":1,"y":1}""")
+        add("tap switched to pulled-back app", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(changed = true, appSwitched = "com.y", switchedPulledBack = true) }), "phone_tap", """{"x":1,"y":1}""")
+        add("tap with app returned to user", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(changed = true, returnedToUser = listOf("com.z")) }), "phone_tap", """{"x":1,"y":1}""")
         add("tap not settled", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(changed = true, settled = false) }), "phone_tap", """{"x":1,"y":1}""")
         add("type mismatch", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(verification = Verification.MISMATCH) }), "phone_type_text", """{"text":"a"}""")
         add("type unknown + enter", toolDispatcher(FakeScreen().apply { result = ActionResult.Ok(verification = Verification.UNKNOWN) }), "phone_type_text", """{"text":"a","pressEnter":true}""")

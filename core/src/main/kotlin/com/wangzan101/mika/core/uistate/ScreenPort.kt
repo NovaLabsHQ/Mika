@@ -153,6 +153,8 @@ sealed interface ActionResult {
      * [inProfile] 刚到前台的 App 装了两份时开的是哪一份(见 [OpenedElsewhere.inProfile]):系统问过打开哪一个之后,
      * 以及目标 App 列出过另一份、或要的就是另一份时每次都报;[profileUser] 是此刻屏上那一份所属的用户编号,
      * [requestedUser] 是打开时要的那份用户(要的是本来那份为 null)。
+     * [switchedPulledBack] 新前台是之前从用户主屏挪回 Mika 屏上的任务:不一定是目标 App 打开的,不说成「目标 App 打开的」;
+     * [returnedToUser] 这段时间里没经这个任务打开、却冒到 Mika 屏上的 App,已送回用户的主屏(包名)。
      */
     data class Ok(
         val changed: Boolean? = null,
@@ -170,6 +172,8 @@ sealed interface ActionResult {
         val inProfile: String? = null,
         val profileUser: Int? = null,
         val requestedUser: Int? = null,
+        val switchedPulledBack: Boolean = false,
+        val returnedToUser: List<String> = emptyList(),
     ) : ActionResult
 
     /** 引用已过期时 reason 为 "ref_expired"。[hint] 是端口的补充说明(例如盖住目标的是什么),原样附在错误说明后。 */

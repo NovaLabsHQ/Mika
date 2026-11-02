@@ -93,6 +93,24 @@ class ToolDispatcherAccuracyTest {
         assertTrue(h, "opened by" in h && "interruption" !in h)
     }
 
+    @Test fun pulledBackAppIsNotWordedAsOpenedByTheTarget() = runTest {
+        val s = FakeScreen().apply { result = ActionResult.Ok(changed = true, appSwitched = "com.video", switchedPulledBack = true) }
+        val r = toolDispatcher(s).execute(call("phone_tap", """{"ref":"@e1","snapshotId":"a"}"""))
+        assertEquals("com.video", r.content.s("app_switched"))
+        assertTrue(r.content.b("pulled_back"))
+        assertTrue("opened_by_target" !in r.content)
+        val h = r.content.s("hint")
+        assertTrue(h, "opened by the app" !in h && "did not necessarily open it" in h)
+    }
+
+    @Test fun appReturnedToTheUserIsReported() = runTest {
+        val s = FakeScreen().apply { result = ActionResult.Ok(changed = true, returnedToUser = listOf("com.shopper", "com.shopper")) }
+        val r = toolDispatcher(s).execute(call("phone_tap", """{"ref":"@e1","snapshotId":"a"}"""))
+        assertEquals("[\"com.shopper\"]", r.content["returned_to_user"].toString())
+        val h = r.content.s("hint")
+        assertTrue(h, "com.shopper came up on Mika's screen" in h && "do not open it" in h)
+    }
+
     @Test fun appInUseByUserHasExplanation() = runTest {
         val s = FakeScreen().apply { result = ActionResult.Failed("app_in_use_by_user") }
         val r = toolDispatcher(s).execute(call("phone_launch_app", """{"package":"com.x"}"""))

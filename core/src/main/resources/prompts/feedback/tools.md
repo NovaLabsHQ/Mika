@@ -244,7 +244,7 @@ The app is open, but {{pkg}} is showing on top of it (a permission dialog, an ac
 The system asked which one to open ({{pkg}} is showing the choice; chooser.options lists them, clone:true marks a clone or other-profile copy, and the screen has their refs). If the user said which one, tap that option; otherwise tap the main one. The launch goes on from your pick: do not launch the app again, that only brings the same question back.
 
 ## spill.pulled_back
-This action opened {{app}} on the user's own screen instead of Mika's (the app started it outside its own screen). Mika moved it to Mika's screen, where it is now in front. The action worked, so do not repeat it: continue in {{app}}.
+This action opened {{app}} on the user's own screen instead of Mika's (the app started it outside its own screen). Mika moved it to Mika's screen, where it is now in front. Do not repeat the action. If {{app}} is what the action was meant to open, continue there; if it is not part of the task, go back to the app this task is working in.
 
 ## spill.user_picking
 This action made the system ask, on the user's own screen, which one to open ({{app}}; chooser lists the options when they could be read). The action worked: do not repeat it, and do not try to pick for the user. Mika has asked the user to pick there, and Mika's next screen action waits until they have; its result then says what opened.
@@ -296,6 +296,12 @@ Now in {{pkg}}, opened by the app this task is working in. If it is part of the 
 
 ## switch.interruption
 Now in {{pkg}}, not the app this task is working in. Go back or close this interruption, or phone_launch_app again to switch back.
+
+## switch.pulled_back
+Now in {{pkg}}. It came up on the user's screen after an earlier action and was moved to Mika's screen, so the app this task is working in did not necessarily open it. If it is not part of the task, go back or phone_launch_app again to switch back; do not keep working in it.
+
+## intruder.returned
+{{pkg}} came up on Mika's screen without this task opening it, so it was moved back to the user's screen. Ignore it and continue; do not open it.
 
 ## barrier.popup
 A promotion, guide or update dialog that can be closed is not a blocker. Close it with its own close control (×, 跳过, 以后再说, Skip, Later), then observe again. Do not call hand_to_user for it.

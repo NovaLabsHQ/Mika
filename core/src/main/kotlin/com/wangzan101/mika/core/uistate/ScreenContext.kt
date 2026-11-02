@@ -10,9 +10,11 @@ import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.fail
 import com.wangzan101.mika.core.tool.okObj
+import com.wangzan101.mika.core.tool.returnedHint
 import com.wangzan101.mika.core.tool.switchHint
 import com.wangzan101.mika.core.vision.LocateRegistry
 import com.wangzan101.mika.core.vision.Locator
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -66,7 +68,8 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
         val hints = listOfNotNull(
             HINT_TAP_UNCHANGED.takeIf { r.changed == false && !reportsEffect && r.opened == null },
             // 开到用户主屏上又挪回来的,由下面那句说清,不再说被切走
-            r.appSwitched?.takeIf { r.opened == null }?.let { switchHint(it, r.switchedByTarget) },
+            r.appSwitched?.takeIf { r.opened == null }?.let { switchHint(it, r.switchedByTarget, r.switchedPulledBack) },
+            returnedHint(r.returnedToUser),
             HINT_NOT_SETTLED.takeIf { r.settled == false },
             r.coveredBy?.let { Feedback.format("covered_by", "pkg" to it) },
             r.opened?.let { openedHint(it) },
@@ -84,6 +87,9 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
             r.changed?.let { put("changed", it) }
             r.appSwitched?.let { put("app_switched", it) }
             if (r.appSwitched != null && r.switchedByTarget) put("opened_by_target", true)
+            // 挪回来的任务不是目标 App 打开的:不标 opened_by_target
+            if (r.appSwitched != null && !r.switchedByTarget && r.switchedPulledBack) put("pulled_back", true)
+            r.returnedToUser.distinct().takeIf { it.isNotEmpty() }?.let { l -> put("returned_to_user", JsonArray(l.map(::JsonPrimitive))) }
             if (r.relocated) put("relocated", true)
             r.relocatedTo?.takeIf { r.relocated }?.let { put("relocatedTo", it) }
             if (r.settled == false) put("settled", false)
