@@ -35,7 +35,7 @@ Login screen should reject a wrong password.
 version: 1
 app: com.example.shop            # package to test (required, must be installed)
 min_version: 2.3.0               # optional; fail fast if the installed versionName is older
-reset: force_stop                # none | force_stop (default). clear_data is not offered in v1
+reset: force_stop                # none (default) | force_stop. clear_data is not offered in v1
 steps:                           # what to do, in order (required, 1..30 items)
   - Open the app and go to Account › Sign in
   - Enter user "qa+1@example.com" and password "wrong-password"
