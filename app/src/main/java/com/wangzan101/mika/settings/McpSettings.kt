@@ -70,7 +70,7 @@ class McpSettings(private val dir: File, private val cipher: KeyCipher, private 
     }
 
     companion object {
-        const val DEFAULT_PORT = 8765
+        const val DEFAULT_PORT = com.wangzan101.mika.BuildConfig.MCP_DEFAULT_PORT
         private const val MIN_TOKEN = 32
     }
 }

@@ -295,7 +295,7 @@ Mika 在一块单独的后台屏上操作 App，安卓 12 起可以使用手机�
 
 CLI 测试另需 Python 3.10+,可用 `-PmikaPython=/path/to/python3` 指定解释器。
 
-需要 JDK 17 和 Android SDK（`local.properties` 里的 `sdk.dir`，或环境变量 `ANDROID_HOME`）。
+需要 JDK 17 和 Android SDK（`local.properties` 里的 `sdk.dir`，或环境变量 `ANDROID_HOME`）。第一次编译前先运行 `tools/voice/fetch-sherpa-onnx.sh`，下载语音用的 sherpa-onnx 运行库（核对 SHA-256，放到不进 git 的 `app/libs/`）；没下载时构建会停下并提示。
 
 ```bash
 ./gradlew :app:assembleDebug                  # 调试包

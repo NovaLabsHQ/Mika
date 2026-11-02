@@ -53,4 +53,13 @@ class AppSwitchTest {
         assertNull(AppSwitch.switchedTo("com.clock", "com.clock", { true }, pickers, { false }, otherCopy = { false }))
         assertNull(AppSwitch.switchedTo("com.clock", "com.clock", { true }, pickers, { false }))
     }
+
+    @Test fun pulledBackTaskInFrontIsNotWordedAsOpenedByTheTarget() {
+        // 从用户主屏挪回来的任务在最上面:不是目标任务,单独标出来
+        assertEquals(AppSwitch.Switch("com.video", byTarget = false, pulledBack = true),
+            AppSwitch.switchedTo("com.clock", "com.video", { false }, pickers, { false }, pulledBackTask = { true }))
+        // 目标任务里打开的照旧算目标打开的
+        assertEquals(AppSwitch.Switch("com.video", byTarget = true),
+            AppSwitch.switchedTo("com.clock", "com.video", { true }, pickers, { false }, pulledBackTask = { true }))
+    }
 }

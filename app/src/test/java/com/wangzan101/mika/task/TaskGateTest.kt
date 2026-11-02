@@ -50,6 +50,21 @@ class TaskGateTest {
     }
 
     @Test
+    fun movedAwayPauseNamesTheApp() = runTest {
+        gate.onTaskMovedAway("YouTube")
+        launch { gate.pass { reported += it } }
+        runCurrent()
+        val why = TaskGate.movedAwayCopy("YouTube")
+        assertTrue(why, why.contains("YouTube"))
+        assertEquals(TaskState.Held(TaskGate.paused(why)), reported.last())
+        assertEquals(why, gate.movedAwayReason)
+        // 名字读不到时不说名字
+        assertEquals(TaskGate.MOVED_AWAY, TaskGate.movedAwayCopy(null))
+        assertEquals(TaskGate.MOVED_AWAY, TaskGate.movedAwayCopy(" "))
+        coroutineContext.cancelChildren()
+    }
+
+    @Test
     fun movedAwayPausesUntilUserContinuesThenMovesBack() = runTest {
         gate.resume() // 暂停之前的「继续」不算数
         gate.onTaskMovedAway()

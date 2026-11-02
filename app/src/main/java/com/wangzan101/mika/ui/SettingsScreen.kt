@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页。 */
-private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, Capsule, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Developer, RunStats }
+private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, LeaveAlone, SensitiveApps, Capsule, Voice, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Board, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 基本 / 隐私与数据 / 高级 / 关于四组。各子页面在这里切换(返回键先回首页),
@@ -103,6 +103,8 @@ fun SettingsScreen(
     var parallelMax by remember { mutableIntStateOf(flags.parallelMax()) }
     var keepScreenOn by remember { mutableStateOf(flags.keepScreenOn()) }
     var muteTarget by remember { mutableStateOf(flags.muteTarget()) }
+    var leaveAlone by remember { mutableStateOf(flags.leaveAloneApps()) }
+    var sensitive by remember { mutableStateOf(flags.sensitiveApps()) }
     var operatingPace by remember { mutableStateOf(flags.operatingPace()) }
     var capsuleMode by remember { mutableStateOf(flags.capsuleMode()) }
     // 换语言时界面会重建,这里每次进来读一次即可
@@ -118,6 +120,9 @@ fun SettingsScreen(
     val mcpNetworkOn by mcp.settings.enabled.collectAsState()
     val mcpUsbOn by mcp.usb.enabled.collectAsState()
     val mcpOn = mcpNetworkOn || mcpUsbOn
+    // 任务看板只在 Mika Tester 包里有入口
+    val board = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).board.takeIf { BuildConfig.TESTER_BOARD } }
+    val boardOn = board?.settings?.config?.collectAsState()?.value?.enabled
     // 「Token 用量」一行的值:近 7 天的合计,账本每记一笔就重算
     val usage = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).usage }
     val usageVersion by usage.version.collectAsState()
@@ -144,6 +149,7 @@ fun SettingsScreen(
             SettingsPage.RunStats -> SettingsPage.Developer
             SettingsPage.SelfCheck -> SettingsPage.Recovery
             SettingsPage.Notifications -> notificationsFrom
+            SettingsPage.LeaveAlone -> SettingsPage.DuringWork
             else -> SettingsPage.Home
         }
     }
@@ -159,14 +165,17 @@ fun SettingsScreen(
             onOpenPhoneOps = { page = SettingsPage.PhoneOps },
             onOpenDuringWork = { page = SettingsPage.DuringWork },
             capsuleMode = capsuleMode, onOpenCapsule = { page = SettingsPage.Capsule },
+            onOpenVoice = { page = SettingsPage.Voice },
             onOpenNotifications = { notificationsFrom = SettingsPage.Home; page = SettingsPage.Notifications },
             language = language, onOpenLanguage = { page = SettingsPage.Language },
             onOpenMemory = onOpenMemory,
+            onOpenSensitiveApps = { page = SettingsPage.SensitiveApps },
             webSitesCount = webSites?.sites?.size, onOpenWebSites = { page = SettingsPage.WebSites },
             sandbox = sandboxStatus, onOpenSandbox = { page = SettingsPage.Sandbox },
             routes = routeCount, onOpenRoutes = { page = SettingsPage.Routes },
             onOpenRecovery = { page = SettingsPage.Recovery },
             computerAccess = mcpOn, onOpenComputerAccess = { page = SettingsPage.ComputerAccess },
+            taskBoard = boardOn, onOpenTaskBoard = { page = SettingsPage.Board },
             showDeveloper = showDeveloper, onOpenDeveloper = { page = SettingsPage.Developer },
             versionName = BuildConfig.VERSION_NAME, updateVersion = updateVersion, onOpenAbout = onOpenAbout,
         )
@@ -182,8 +191,14 @@ fun SettingsScreen(
             muteTarget, onMuteTarget = { flags.setMuteTarget(it); muteTarget = it },
             parallel, onParallelMax = { flags.setParallelMax(it); parallelMax = it }, onBack = toHome,
             operatingPace = operatingPace, onOperatingPace = { flags.setOperatingPace(it); operatingPace = it },
+            leaveAloneCount = leaveAlone.size, onOpenLeaveAlone = { page = SettingsPage.LeaveAlone },
         )
+        SettingsPage.SensitiveApps -> SensitiveAppsScreen(sensitive, onChange = { flags.setSensitiveApps(it); sensitive = it }, onBack = toHome)
+        SettingsPage.LeaveAlone -> LeaveAloneScreen(leaveAlone, onChange = { flags.setLeaveAloneApps(it); leaveAlone = it }, onBack = back)
         SettingsPage.Language -> LanguageScreen(language, onLanguage = { AppLanguage.set(context, it) }, onBack = toHome)
+        SettingsPage.Voice -> (context.applicationContext as com.wangzan101.mika.MikaApp).let { app ->
+            VoiceScreen(app.voice, app.voiceEngines, onBack = toHome)
+        }
         SettingsPage.Capsule -> CapsuleScreen(capsuleMode, onMode = { flags.setCapsuleMode(it); capsuleMode = it }, onBack = toHome)
         // 没有数据时首页不显示入口,走不到这一页
         SettingsPage.WebSites -> webSites?.let { WebSitesScreen(it, onBack = toHome) }
@@ -196,6 +211,7 @@ fun SettingsScreen(
         SettingsPage.Recovery -> RecoveryScreen(onBack = toHome, onOpenSelfCheck = { page = SettingsPage.SelfCheck })
         SettingsPage.SelfCheck -> SelfCheckScreen(status, onBack = back)
         SettingsPage.ComputerAccess -> McpScreen(mcp, onBack = toHome)
+        SettingsPage.Board -> board?.let { BoardScreen(it, onBack = toHome) }
         SettingsPage.Developer -> DeveloperOptionsScreen(
             speed, onSpeed = { flags.setSpeed(it); speed = it }, onBack = toHome,
             autonomous = autonomous, onAutonomous = onAutonomous,
@@ -245,11 +261,15 @@ fun SettingsContent(
     /** 悬浮胶囊此刻的选择,写在「悬浮胶囊」一行的右边。 */
     capsuleMode: CapsuleMode = CapsuleMode.DEFAULT,
     onOpenCapsule: () -> Unit = {},
+    /** 设置 › 语音:说话代替打字、朗读回答。 */
+    onOpenVoice: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     /** 此刻选的界面语言,写在「语言」一行的右边。 */
     language: AppLanguage = AppLanguage.System,
     onOpenLanguage: () -> Unit = {},
     onOpenMemory: (() -> Unit)? = null,
+    /** 设置 › 隐私与数据 › 敏感 App;为空时不显示这一行。 */
+    onOpenSensitiveApps: (() -> Unit)? = null,
     webSitesCount: Int? = null,
     onOpenWebSites: () -> Unit = {},
     sandbox: SandboxStatus? = null,
@@ -261,6 +281,8 @@ fun SettingsContent(
     /** 电脑连接(MCP)开着没有;为空时不显示这一行。 */
     computerAccess: Boolean? = null,
     onOpenComputerAccess: () -> Unit = {},
+    taskBoard: Boolean? = null,
+    onOpenTaskBoard: () -> Unit = {},
     showDeveloper: Boolean = false,
     onOpenDeveloper: () -> Unit = {},
     versionName: String = "",
@@ -292,6 +314,7 @@ fun SettingsContent(
                 RowValue(CapsuleSettingsCopy.label(capsuleMode))
                 RowChevron()
             }
+            ListRow(MikaIcons.Mic, stringResource(R.string.voice_title), stringResource(R.string.voice_settings_sub), onClick = onOpenVoice) { RowChevron() }
             ListRow(MikaIcons.Globe, stringResource(R.string.language_title), onClick = onOpenLanguage) {
                 RowValue(languageLabel(language))
                 RowChevron()
@@ -303,7 +326,7 @@ fun SettingsContent(
             }
         }
 
-        val privacyRows = onOpenMemory != null || webSitesCount != null
+        val privacyRows = onOpenMemory != null || webSitesCount != null || onOpenSensitiveApps != null
         if (privacyRows) {
             GroupLabel(stringResource(R.string.settings_privacy))
             GroupCard {
@@ -315,12 +338,15 @@ fun SettingsContent(
                 webSitesCount?.let {
                     ListRow(MikaIcons.Globe, stringResource(R.string.settings_web_logins), first = take(), onClick = onOpenWebSites) { RowValue(trPlural(R.plurals.settings_count_sites, it)); RowChevron() }
                 }
+                onOpenSensitiveApps?.let {
+                    ListRow(MikaIcons.Lock, stringResource(R.string.settings_sensitive_apps), stringResource(R.string.settings_sensitive_apps_sub), first = take(), onClick = it) { RowChevron() }
+                }
             }
         }
 
         val sandboxRow = sandbox?.takeIf { it !is SandboxStatus.Unsupported }
         val recoveryRow = status.sdkInt >= Prerequisites.MIN_SDK
-        if (sandboxRow != null || routes != null || recoveryRow || computerAccess != null || showDeveloper) {
+        if (sandboxRow != null || routes != null || recoveryRow || computerAccess != null || taskBoard != null || showDeveloper) {
             GroupLabel(stringResource(R.string.settings_advanced))
             GroupCard {
                 var first = true
@@ -338,6 +364,11 @@ fun SettingsContent(
                 }
                 computerAccess?.let { on ->
                     ListRow(MikaIcons.Desktop, stringResource(R.string.mcp_title), first = take(), onClick = onOpenComputerAccess) {
+                        RowValue(stringResource(if (on) R.string.state_on else R.string.state_off)); RowChevron()
+                    }
+                }
+                taskBoard?.let { on ->
+                    ListRow(MikaIcons.Link, stringResource(R.string.board_title), first = take(), onClick = onOpenTaskBoard) {
                         RowValue(stringResource(if (on) R.string.state_on else R.string.state_off)); RowChevron()
                     }
                 }

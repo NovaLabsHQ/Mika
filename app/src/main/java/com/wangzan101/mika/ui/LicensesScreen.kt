@@ -67,6 +67,11 @@ object Licenses {
         Entry("Alpine Linux", "各软件包各自的许可证", RUNTIME_NOTE),
         Entry("XZ for Java", "0BSD", "版本 1.10,首次启动时解压自带的运行环境。https://tukaani.org/xz/java.html"),
         Entry("commonmark-java", "BSD-2-Clause", "版本 0.30.1(含表格、删除线扩展),把回答里的 Markdown 解析成结构后显示。Copyright (c) 2015, Atlassian Pty Ltd. https://github.com/commonmark/commonmark-java"),
+        Entry("sherpa-onnx", "Apache-2.0", "版本 2.0.1,本机语音识别与朗读的运行库,只带 arm64-v8a。由 tools/voice/fetch-sherpa-onnx.sh 取得。https://github.com/k2-fsa/sherpa-onnx"),
+        Entry("ONNX Runtime", "MIT", "版本 1.28.2,静态链接进 sherpa-onnx 的原生库。Copyright (c) Microsoft Corporation. https://github.com/microsoft/onnxruntime"),
+        Entry("Parakeet TDT 0.6B v3", "CC-BY-4.0", "NVIDIA 的语音识别模型(k2-fsa 转成 int8 ONNX)。不随安装包发布,在 设置 › 语音 里下载。https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"),
+        Entry("Silero VAD", "MIT", "判断说话开始、结束的模型,和 Parakeet v3 一起下载。Copyright (c) 2020-present Silero Team. https://github.com/snakers4/silero-vad"),
+        Entry("Supertonic 3", "OpenRAIL-M", "Supertone 的多语言朗读模型(k2-fsa 转成 int8 ONNX),权重 OpenRAIL-M、带使用限制,推理代码 MIT。不随安装包发布,在 设置 › 语音 里同意使用限制后下载。https://huggingface.co/Supertone/supertonic-3"),
     )
 }
 

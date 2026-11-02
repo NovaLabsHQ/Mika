@@ -42,6 +42,18 @@ import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import com.wangzan101.mika.core.cap.phone.OperatingPace
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import com.wangzan101.mika.cap.phone.a11y.launchableApps
+import com.wangzan101.mika.settings.LeaveAloneList
+import com.wangzan101.mika.ui.components.ButtonKind
+import com.wangzan101.mika.ui.components.ButtonSize
+import com.wangzan101.mika.ui.components.EmptyNote
+import com.wangzan101.mika.ui.components.InputRow
+import com.wangzan101.mika.ui.components.MikaButton
+import com.wangzan101.mika.ui.components.SearchField
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // ---------- 手机操作 ----------
 
@@ -189,6 +201,7 @@ fun DuringWorkScreen(
     muteTarget: Boolean, onMuteTarget: (Boolean) -> Unit,
     parallel: ParallelSetting?, onParallelMax: (Int) -> Unit, onBack: () -> Unit,
     operatingPace: OperatingPace = OperatingPace.DEFAULT, onOperatingPace: (OperatingPace) -> Unit = {},
+    leaveAloneCount: Int = 0, onOpenLeaveAlone: (() -> Unit)? = null,
 ) {
     PageScaffold(stringResource(R.string.settings_during_work), onBack) {
         GroupCard {
@@ -199,6 +212,15 @@ fun DuringWorkScreen(
                 MikaSwitch(muteTarget, onMuteTarget, Modifier.testTag("work-mute-target"))
             }
             parallel?.let { ParallelRow(it, onParallelMax) }
+            onOpenLeaveAlone?.let { open ->
+                ListRow(
+                    MikaIcons.Hand, stringResource(R.string.settings_leave_alone), stringResource(R.string.settings_leave_alone_sub),
+                    onClick = open,
+                ) {
+                    RowValue(if (leaveAloneCount == 0) stringResource(R.string.settings_leave_alone_none) else leaveAloneCount.toString())
+                    RowChevron()
+                }
+            }
         }
         GroupLabel(stringResource(R.string.settings_pace))
         GroupCard {
@@ -207,6 +229,61 @@ fun DuringWorkScreen(
             }
         }
         FooterNote(stringResource(R.string.settings_pace_foot))
+    }
+}
+
+/**
+ * 设置 › 干活时 › 别动这些 App:上面是已选的(关掉开关即移出),下面是已安装 App(可搜索)和手填包名。
+ * 已安装 App 在 IO 线程上读一次;列表里的 App 不会被拉回 Mika 的屏,出现在 Mika 屏上时挪回主屏。
+ */
+@Composable
+fun LeaveAloneScreen(chosen: Set<String>, onChange: (Set<String>) -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    var apps by remember { mutableStateOf<List<Pair<String, String>>?>(null) }
+    LaunchedEffect(Unit) {
+        apps = withContext(Dispatchers.IO) { runCatching { launchableApps(context.packageManager, context.packageName) }.getOrDefault(emptyList()) }
+    }
+    var filter by remember { mutableStateOf("") }
+    var manual by remember { mutableStateOf("") }
+    val labels = remember(apps) { apps.orEmpty().toMap() }
+    PageScaffold(stringResource(R.string.settings_leave_alone), onBack) {
+        FooterNote(stringResource(R.string.settings_leave_alone_foot))
+        if (chosen.isNotEmpty()) {
+            GroupLabel(stringResource(R.string.settings_leave_alone_chosen))
+            GroupCard {
+                LeaveAloneList.chosenRows(chosen, labels).forEachIndexed { i, (pkg, label) ->
+                    ListRow(null, label, pkg.takeIf { it != label }, first = i == 0, onClick = { onChange(chosen - pkg) }) {
+                        MikaSwitch(true, { onChange(chosen - pkg) }, Modifier.testTag("leave-alone-on-$pkg"))
+                    }
+                }
+            }
+        }
+        GroupLabel(stringResource(R.string.settings_leave_alone_apps))
+        GroupCard {
+            val added = LeaveAloneList.normalize(manual)
+            InputRow(
+                stringResource(R.string.settings_leave_alone_package), manual, { manual = it.take(255) },
+                stringResource(R.string.settings_leave_alone_package_hint), first = true, modifier = Modifier.testTag("leave-alone-package"),
+            ) {
+                MikaButton(
+                    stringResource(R.string.settings_leave_alone_add), { added?.let { onChange(chosen + it); manual = "" } },
+                    kind = ButtonKind.Tonal, size = ButtonSize.Small, enabled = added != null && added !in chosen,
+                )
+            }
+        }
+        SearchField(filter, { filter = it }, stringResource(R.string.settings_leave_alone_search), Modifier.testTag("leave-alone-filter"))
+        val all = apps
+        if (all != null) {
+            val shown = LeaveAloneList.visible(all, chosen, filter)
+            if (shown.isEmpty()) EmptyNote(stringResource(R.string.settings_leave_alone_empty))
+            else GroupCard {
+                shown.forEachIndexed { i, (pkg, label) ->
+                    ListRow(null, label, pkg, first = i == 0, onClick = { onChange(chosen + pkg) }) {
+                        MikaSwitch(false, { onChange(chosen + pkg) }, Modifier.testTag("leave-alone-off-$pkg"))
+                    }
+                }
+            }
+        }
     }
 }
 

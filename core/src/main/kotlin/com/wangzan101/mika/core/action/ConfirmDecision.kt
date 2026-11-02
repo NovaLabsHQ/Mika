@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.run.RunOrigin
 import com.wangzan101.mika.core.run.RunProvenance
 
 /** 一次动作执行前的审批结论。 */
@@ -58,7 +59,8 @@ class ConfirmDecision(
     /** 判定放在锁屏等待之后:按此刻重新读的一屏判。 */
     suspend fun judge(tool: String, args: JsonObject, origin: Origin): Decision {
         outwardSite = null
-        if (autonomous || approvals.autonomous()) {
+        // 渠道(任务看板)交来的任务不吃「自主执行」:付款照样走下面的判定,由 ApprovalPolicy 一律拒绝
+        if ((autonomous || approvals.autonomous()) && provenance.origin != RunOrigin.Channel) {
             val target = tools.gateTarget(tool)
             if (IrreversibleDetector.needsCheck(target, args)) {
                 val aim = tools.interfaces.actionTarget(tools.declared(tool), args)

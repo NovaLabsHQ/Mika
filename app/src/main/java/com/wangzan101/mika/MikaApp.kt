@@ -81,6 +81,12 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     val resources = ResourceScheduler()
     val remoteTasks by lazy { RemoteTaskHub(this) }
 
+    /** 任务看板(GitHub issues):设置(令牌加密另存)和轮询到的任务;只在 BuildConfig.TESTER_BOARD 的包里能打开。 */
+    val board by lazy {
+        com.wangzan101.mika.board.BoardRuntime(this,
+            com.wangzan101.mika.settings.BoardSettings(java.io.File(filesDir, "settings"), com.wangzan101.mika.settings.KeystoreKeyCipher("mika-board-keys")))
+    }
+
     /**
      * 电脑连接(MCP):开关、访问令牌(和服务商的 Key 一样加密存)、监听。局域网那种默认关着;
      * USB 那种由电脑经 adb 打开,只到这次关机为止(开机编号和 shell 里 `settings get global boot_count` 读到的一样)。
@@ -94,6 +100,12 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
                 infoFile = { getExternalFilesDir(null)?.let { java.io.File(it, com.wangzan101.mika.core.mcp.McpUsb.INFO_FILE) } }),
             remoteTasks, com.wangzan101.mika.device.AndroidDeviceAccess(this) { phone.hub.shell.value })
     }
+    /** 语音设置:选哪个识别、朗读引擎;ElevenLabs 的 Key 和服务商的 Key 一样加密存(单独一把密钥)。 */
+    val voice by lazy {
+        com.wangzan101.mika.settings.VoiceSettings(java.io.File(filesDir, "settings"), com.wangzan101.mika.settings.KeystoreKeyCipher("mika-voice-keys"))
+    }
+    /** 对话页听写用哪个识别引擎,按 [voice] 里的选择现挑;本机语音模型下到 noBackupFilesDir/voice(不进云备份)。 */
+    val voiceEngines by lazy { com.wangzan101.mika.voice.VoiceEngines(this, voice, java.io.File(noBackupFilesDir, "voice")) }
     val childRuns by lazy { FileChildRunStore(java.io.File(filesDir, "children-v3.json")) }
     override val tabBudget get() = resources.tabBudget
 

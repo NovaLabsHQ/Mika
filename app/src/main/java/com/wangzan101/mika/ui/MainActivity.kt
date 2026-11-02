@@ -105,6 +105,7 @@ class MainActivity : ComponentActivity() {
         (application as MikaApp).updates.autoCheckInBackground()
         // 电脑连接开着、服务却不在(被系统停过、从后台没能起来):界面在前台时补起来
         (application as MikaApp).mcp.ensureRunning()
+        com.wangzan101.mika.board.BoardService.ensureRunning(this)
     }
 
     override fun onResume() {

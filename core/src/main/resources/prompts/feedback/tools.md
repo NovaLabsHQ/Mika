@@ -111,6 +111,12 @@ Another task is using this app right now. Do something else first, or wait a mom
 ## failure.opened_elsewhere
 This action was not done: the previous action had just opened an app on the user's own screen (it came up late), so the screen changed under you.
 
+## failure.app_blocked_by_privacy
+Not done: that app is on the user's privacy list of sensitive apps (banking, finance, health, passwords and similar), so Mika cannot open, see or operate it. Do not retry and do not try another way into it (a link, a share, a system action or a shell command). Carry on without it if you can; if the task needs it, tell the user it is on their privacy list, which they can change in Settings › Privacy & data › Sensitive apps.
+
+## blocked_by_privacy
+{{app}} is in front on Mika's screen, but it is on the user's privacy list of sensitive apps, so its screen is not shown and Mika does not operate it; Mika is sending it back to the user's own screen. Do not try to use it. Observe again to see Mika's screen, and if the task needs that app, tell the user it is on their privacy list (Settings › Privacy & data › Sensitive apps).
+
 ## failure.app_not_found
 That app is not installed or has no launchable screen. Use phone_list_apps to find the exact package.
 
@@ -244,7 +250,7 @@ The app is open, but {{pkg}} is showing on top of it (a permission dialog, an ac
 The system asked which one to open ({{pkg}} is showing the choice; chooser.options lists them, clone:true marks a clone or other-profile copy, and the screen has their refs). If the user said which one, tap that option; otherwise tap the main one. The launch goes on from your pick: do not launch the app again, that only brings the same question back.
 
 ## spill.pulled_back
-This action opened {{app}} on the user's own screen instead of Mika's (the app started it outside its own screen). Mika moved it to Mika's screen, where it is now in front. The action worked, so do not repeat it: continue in {{app}}.
+This action opened {{app}} on the user's own screen instead of Mika's (the app started it outside its own screen). Mika moved it to Mika's screen, where it is now in front. Do not repeat the action. If {{app}} is what the action was meant to open, continue there; if it is not part of the task, go back to the app this task is working in.
 
 ## spill.user_picking
 This action made the system ask, on the user's own screen, which one to open ({{app}}; chooser lists the options when they could be read). The action worked: do not repeat it, and do not try to pick for the user. Mika has asked the user to pick there, and Mika's next screen action waits until they have; its result then says what opened.
@@ -260,6 +266,15 @@ This action opened {{app}} as a popup on the user's own screen that needs them (
 
 ## spill.in_use
 This action opened {{app}}, which the user is using on their own screen, so it opened there in front of them and Mika left it alone. Do not repeat the action. Call hand_to_user with reason other so the user can do that step there, or wait and try again later.
+
+## spill.on_its_own
+{{app}} opened on the user's own screen on its own, not because of this action (the app pops up its own windows), so Mika left it there. This is not the user taking over and not something for the user to do: do not call hand_to_user for it and do not repeat the action because of it. Observe Mika's screen and carry on with the task.
+
+## spill.left_alone
+{{app}} opened on the user's own screen on its own, not because of this action. It is on the user's list of apps Mika leaves alone, so Mika left it there. This is not the user taking over: do not call hand_to_user for it and do not repeat the action because of it. Observe Mika's screen and carry on with the task.
+
+## spill.blocked
+{{app}} opened on the user's own screen. It is on the user's privacy list of sensitive apps, so Mika does not move, read or operate it and left it there. Do not try to open or use it, and do not repeat the action. Carry on with the task without it; if the task needs that app, tell the user it is on their privacy list (Settings › Privacy & data › Sensitive apps).
 
 ## profile.main_not_requested
 This is the main app, not the requested copy.
@@ -296,6 +311,12 @@ Now in {{pkg}}, opened by the app this task is working in. If it is part of the 
 
 ## switch.interruption
 Now in {{pkg}}, not the app this task is working in. Go back or close this interruption, or phone_launch_app again to switch back.
+
+## switch.pulled_back
+Now in {{pkg}}. It came up on the user's screen after an earlier action and was moved to Mika's screen, so the app this task is working in did not necessarily open it. If it is not part of the task, go back or phone_launch_app again to switch back; do not keep working in it.
+
+## intruder.returned
+{{pkg}} came up on Mika's screen without this task opening it, so it was moved back to the user's screen. Ignore it and continue; do not open it.
 
 ## barrier.popup
 A promotion, guide or update dialog that can be closed is not a blocker. Close it with its own close control (×, 跳过, 以后再说, Skip, Later), then observe again. Do not call hand_to_user for it.

@@ -20,7 +20,8 @@
     <string name="gate_pick_system">系統在問用哪個，請在螢幕上選一下</string>
     <string name="gate_finish_app">「%1$s」要你在螢幕上處理，處理好了點繼續</string>
     <string name="gate_finish_unknown">剛開啟的 App 要你在螢幕上處理，處理好了點繼續</string>
-    <string name="gate_moved_away">你打開了這個 App,用完點繼續</string>
+    <string name="gate_moved_away">你在自己的螢幕上打開了這個 App。Android 同一個 App 只能開一份，所以 Mika 先停下了。關掉它或點繼續</string>
+    <string name="gate_moved_away_app">你在自己的螢幕上打開了「%1$s」。Android 同一個 App 只能開一份，所以 Mika 先停下了。關掉它或點繼續</string>
     <string name="gate_move_back_failed">沒能把 App 挪回 Mika 的螢幕,點繼續再試一次</string>
     <string name="gate_shell_down">手機操作中斷了,等它重新連上(或到設定裡處理)後點繼續</string>
     <plurals name="queue_ahead">

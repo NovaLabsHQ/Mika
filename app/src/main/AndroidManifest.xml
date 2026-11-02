@@ -25,6 +25,8 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- 对话页的语音输入:第一次点话筒时才问 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
@@ -43,6 +45,10 @@
         </intent>
         <intent>
             <action android:name="android.content.pm.action.REQUEST_PERMISSIONS" />
+        </intent>
+        <!-- 语音输入用手机自带识别:安卓 11 起要声明才看得见识别服务 -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
         <!-- 系统动作:先查有没有时钟、日历 App 接,没有就退回去操作界面 -->
         <intent>
@@ -153,6 +159,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps the endpoint the user turned on (local network, or loopback for a computer on USB) open so the user's own computer can hand tasks to the app" />
+        </service>
+
+        <!-- 任务看板打开期间轮询 GitHub issues(只在 Mika Tester 包里能打开);不对外开放 -->
+        <service
+            android:name=".board.BoardService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Checks the GitHub issue board the user configured for app-testing tasks while the user has this turned on" />
         </service>
 
         <!-- 用 ChatGPT 登录期间:用户在浏览器里登录时撑住进程,本机回调才有人接;登录一结束就停 -->

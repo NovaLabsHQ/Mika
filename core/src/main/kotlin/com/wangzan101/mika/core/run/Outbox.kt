@@ -6,6 +6,9 @@ import kotlinx.coroutines.CancellationException
 
 enum class DeliveryState { Pending, Attempting, Delivered, Failed, Uncertain }
 
+/** 对账结论,见 [Outbox.reconcile]。 */
+enum class Reconcile { Delivered, Resend, Drop }
+
 data class DeliveryRecord(val peer: ChannelPeer, val delivery: Delivery, val state: DeliveryState)
 
 interface OutboxStore {
@@ -48,6 +51,23 @@ class Outbox(private val store: OutboxStore = MemoryOutboxStore()) {
         catch (_: Throwable) { DeliveryState.Uncertain }
         pending.copy(state = state).also(store::save)
     }
+
+    /**
+     * 渠道能查「发没发出去」时(看板评论带投递标记),把没弄清的记录对一遍:[check] 说已送达的记成送达,
+     * 说重发的回到待发再发一次(只这一次,下次对账还会先查),说作废的记成失败。查的时候出错就原样留着。
+     */
+    suspend fun reconcile(channel: Channel, check: suspend (DeliveryRecord) -> Reconcile): List<DeliveryRecord> =
+        uncertain().filter { it.peer.channelId == channel.id }.map { r ->
+            val verdict = try { check(r) } catch (e: CancellationException) { throw e } catch (_: Throwable) { return@map r }
+            when (verdict) {
+                Reconcile.Delivered -> lock.withLock { r.copy(state = DeliveryState.Delivered).also(store::save) }
+                Reconcile.Drop -> lock.withLock { r.copy(state = DeliveryState.Failed).also(store::save) }
+                Reconcile.Resend -> {
+                    lock.withLock { store.save(r.copy(state = DeliveryState.Pending)) }
+                    deliver(channel, r.peer, r.delivery)
+                }
+            }
+        }
 
     fun pendingRecovery(): List<DeliveryRecord> = store.all().filter { it.state == DeliveryState.Pending }
     fun uncertain(): List<DeliveryRecord> = store.all().filter { it.state == DeliveryState.Attempting || it.state == DeliveryState.Uncertain }

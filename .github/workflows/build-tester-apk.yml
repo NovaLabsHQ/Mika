@@ -1,0 +1,156 @@
+# Build the side-by-side Mika Tester APK (build type mikatester; AGP forbids
+# build type names that start with "test") and refresh the tester-latest
+# prerelease.
+# JDK 17 matches the README. compileSdk is 36; AGP 8.7.3's default build-tools
+# is 34.0.0 (the project does not set buildToolsVersion). Sandbox binaries are
+# already in jniLibs, so this assemble does not need the NDK.
+
+name: Build tester APK
+
+on:
+  push:
+    branches:
+      - feature/tester
+  workflow_dispatch:
+
+# contents: write publishes the tester-latest release. actions: write uploads the
+# artifact and stores the Gradle cache. An explicit permissions block drops
+# every scope that is not listed.
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: build-tester-apk
+  cancel-in-progress: true
+
+jobs:
+  assemble:
+    name: assembleMikatester
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+          packages: platform-tools
+
+      - name: Install Android SDK platform 36 and build-tools
+        run: |
+          set -euo pipefail
+          # Accept licenses again so sdkmanager cannot stop on a prompt.
+          # GNU yes exits 1 after sdkmanager closes the pipe ("Broken pipe").
+          # Judge the sdkmanager status, not yes.
+          set +o pipefail
+          yes | sdkmanager --licenses
+          license_status=${PIPESTATUS[1]}
+          set -o pipefail
+          if [[ "$license_status" -ne 0 ]]; then
+            echo "sdkmanager --licenses failed with exit ${license_status}" >&2
+            exit "$license_status"
+          fi
+          sdkmanager --install "platforms;android-36" "build-tools;34.0.0"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            echo "ANDROID_SDK_ROOT and ANDROID_HOME are unset" >&2
+            exit 1
+          fi
+          test -d "${sdk_root}/platforms/android-36"
+          test -d "${sdk_root}/build-tools/34.0.0"
+          sdkmanager --list_installed
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # GitHub Actions cache. The enhanced provider uses the commercial
+          # Gradle cache service, which this repo is not set up for.
+          cache-provider: basic
+          # Off the default branch the action defaults to read-only, so a
+          # feature/tester build would never save a cache.
+          cache-read-only: false
+
+      # The voice code is on this branch too, so the build still needs the
+      # pinned sherpa-onnx AAR (checkSherpaOnnx stops the build without it).
+      # Voice models are downloaded on the phone only when used.
+      - name: Fetch sherpa-onnx (voice runtime)
+        run: tools/voice/fetch-sherpa-onnx.sh
+
+      - name: Assemble mikatester APK
+        run: ./gradlew :app:assembleMikatester
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mika-tester-apk
+          path: app/build/outputs/apk/mikatester/*.apk
+          if-no-files-found: error
+
+      - name: Publish tester-latest prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/mikatester/*.apk)
+          if [[ ${#apks[@]} -eq 0 ]]; then
+            echo "No APK under app/build/outputs/apk/mikatester/" >&2
+            exit 1
+          fi
+          echo "Built APKs:"
+          printf '  %s\n' "${apks[@]}"
+          src=""
+          for f in "${apks[@]}"; do
+            case "$(basename "$f")" in
+              *unsigned*) ;;
+              *) src="$f" ;;
+            esac
+          done
+          if [[ -z "$src" ]]; then
+            src="${apks[0]}"
+          fi
+          cp "$src" "${RUNNER_TEMP}/mika-tester.apk"
+          ls -lh "${RUNNER_TEMP}/mika-tester.apk"
+
+          if gh release view tester-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete tester-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
+          if git ls-remote --exit-code --tags origin refs/tags/tester-latest >/dev/null 2>&1; then
+            git push origin :refs/tags/tester-latest
+          fi
+
+          download_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/tester-latest/mika-tester.apk"
+          notes="Side-by-side Mika Tester debug APK (build type mikatester, application id com.wangzan101.mika.tester).
+          Built from ${GITHUB_SHA} on ${GITHUB_REF_NAME}. It installs next to release Mika and Mika Voice, keeps its own data, and uses MCP port 28765.
+          Direct download: ${download_url}"
+          notes="$(printf '%s\n' "$notes" | sed 's/^          //')"
+
+          attempt=1
+          while true; do
+            if gh release create tester-latest "${RUNNER_TEMP}/mika-tester.apk" \
+                --repo "$GITHUB_REPOSITORY" \
+                --prerelease \
+                --latest=false \
+                --target "$GITHUB_SHA" \
+                --title "Mika Tester (tester-latest)" \
+                --notes "$notes"; then
+              break
+            fi
+            if [[ "$attempt" -ge 5 ]]; then
+              echo "gh release create failed" >&2
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep $((attempt * 3))
+          done
+
+          echo "Download: ${download_url}" >> "$GITHUB_STEP_SUMMARY"

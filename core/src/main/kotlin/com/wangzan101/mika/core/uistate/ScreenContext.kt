@@ -10,9 +10,11 @@ import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.fail
 import com.wangzan101.mika.core.tool.okObj
+import com.wangzan101.mika.core.tool.returnedHint
 import com.wangzan101.mika.core.tool.switchHint
 import com.wangzan101.mika.core.vision.LocateRegistry
 import com.wangzan101.mika.core.vision.Locator
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -66,7 +68,8 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
         val hints = listOfNotNull(
             HINT_TAP_UNCHANGED.takeIf { r.changed == false && !reportsEffect && r.opened == null },
             // 开到用户主屏上又挪回来的,由下面那句说清,不再说被切走
-            r.appSwitched?.takeIf { r.opened == null }?.let { switchHint(it, r.switchedByTarget) },
+            r.appSwitched?.takeIf { r.opened == null }?.let { switchHint(it, r.switchedByTarget, r.switchedPulledBack) },
+            returnedHint(r.returnedToUser),
             HINT_NOT_SETTLED.takeIf { r.settled == false },
             r.coveredBy?.let { Feedback.format("covered_by", "pkg" to it) },
             r.opened?.let { openedHint(it) },
@@ -84,6 +87,9 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
             r.changed?.let { put("changed", it) }
             r.appSwitched?.let { put("app_switched", it) }
             if (r.appSwitched != null && r.switchedByTarget) put("opened_by_target", true)
+            // 挪回来的任务不是目标 App 打开的:不标 opened_by_target
+            if (r.appSwitched != null && !r.switchedByTarget && r.switchedPulledBack) put("pulled_back", true)
+            r.returnedToUser.distinct().takeIf { it.isNotEmpty() }?.let { l -> put("returned_to_user", JsonArray(l.map(::JsonPrimitive))) }
             if (r.relocated) put("relocated", true)
             r.relocatedTo?.takeIf { r.relocated }?.let { put("relocatedTo", it) }
             if (r.settled == false) put("settled", false)
@@ -109,13 +115,17 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
  * 动作让 App 开到了用户主屏上时给模型的那句:挪回来了就说在 Mika 的屏上接着做、别再点一次;系统在用户屏上问打开哪一个的,
  * 说留给用户选、别再点也别替用户选,下一个动作会等用户选完;用户关了那个问题、用户亲手处理完了的,照实说;
  * 要用户亲手处理的弹窗(登录验证一类)留在用户屏上,说别挪回来、请用户在那里点;留在用户屏上没动的(用户正用着),
- * 说别再来、请用户处理。
+ * 说别再来、请用户处理。App 自己开出来的(或在「别动这些 App」里)说它是自己开的、接着做,不交给用户;
+ * 隐私名单上的说 Mika 不碰它、别再试。
  */
 internal fun openedHint(o: OpenedElsewhere): String {
     val app = o.app ?: o.packageName
     return when {
         o.closed -> Feedback["spill.picker_closed"]
         o.byUser -> Feedback.format("spill.user_done", "app" to app)
+        o.blocked && o.onUserScreen -> Feedback.format("spill.blocked", "app" to app)
+        o.leftAlone && o.onUserScreen -> Feedback.format("spill.left_alone", "app" to app)
+        o.onItsOwn && o.onUserScreen -> Feedback.format("spill.on_its_own", "app" to app)
         o.picker && o.onUserScreen -> Feedback.format("spill.user_picking", "app" to app)
         o.needsUser && o.onUserScreen -> Feedback.format("spill.user_popup", "app" to app)
         o.onUserScreen -> Feedback.format("spill.in_use", "app" to app)

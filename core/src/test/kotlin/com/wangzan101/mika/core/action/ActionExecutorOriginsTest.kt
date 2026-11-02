@@ -11,6 +11,9 @@ import com.wangzan101.mika.core.uistate.ScreenPort
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.UiElement
 import com.wangzan101.mika.core.tool.FakeScreen
+import com.wangzan101.mika.core.run.Attendance
+import com.wangzan101.mika.core.run.RunOrigin
+import com.wangzan101.mika.core.run.RunProvenance
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -95,6 +98,18 @@ class ActionExecutorOriginsTest(private val label: String, private val action: I
         assertTrue("$out", out is ActionOutcome.Ran)
         assertEquals(listOf("@e1"), screen.taps)
         assertTrue(events.none { it is RunEvent.Confirmation || it is RunEvent.Approval })
+    }
+
+    /** 看板等渠道交来的任务:设置里开了自主执行也不付款。 */
+    @Test fun channelRunNeverPaysEvenWhenAutonomous() = runTest {
+        val screen = OneButton(label)
+        val tools = toolDispatcher(screen)
+        tools.execute(Part.ToolCall("o", "phone_observe", "{}"))
+        val executor = ActionExecutor(tools, OperationGuards(), ConfirmationGate(), gate = {}, recorder = ActionRecorder(sink),
+            approvals = { true }, provenance = RunProvenance(RunOrigin.Channel, Attendance.Reachable), autonomous = true)
+        val out = executor.run(Part.ToolCall("c5", "phone_tap", """{"ref":"@e1","snapshotId":"s1"}"""), origin)
+        assertTrue("$out", out is ActionOutcome.Refused)
+        assertTrue(screen.taps.isEmpty())
     }
 
     companion object {

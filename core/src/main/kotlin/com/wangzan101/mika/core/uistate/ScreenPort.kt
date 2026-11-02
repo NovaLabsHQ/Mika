@@ -89,6 +89,8 @@ data class ScreenSnapshot(
     val windows: List<UiWindowTree> = emptyList(),
     /** 上一个动作过后才开到用户主屏上、读这一屏前刚挪回来的 App(见 [OpenedElsewhere]);没有为 null。 */
     val opened: OpenedElsewhere? = null,
+    /** 最上面是隐私名单上的 App(包名):这一屏故意是空白的,不带元素(见 [com.wangzan101.mika.core.privacy.PrivacyScreen]);不是为 null。 */
+    val blockedApp: String? = null,
 )
 
 /**
@@ -100,13 +102,20 @@ data class ScreenSnapshot(
  * 选之前任务停着等;[app] 是问的那个 App 的名字(认得出时)。
  * [closed]:用户把那个问题关了,什么也没打开。[byUser]:选出来的 App 要用户亲手处理,用户在自己屏上处理完、点了继续。
  * [needsUser]:冒到主屏上的是要用户亲手处理的弹窗(登录验证、账号确认、付款确认一类),留在主屏给他们点。
+ * [onItsOwn]:不是这个动作开的,是 App 自己开出来的(自己弹窗口的 App,见 MainScreenSpill.selfLaunched),留在主屏没动;
+ * 不是用户接手,模型接着做,不交给用户。[leftAlone]:它在设置的「别动这些 App」里(也按自己开的说)。
+ * [blocked]:它在隐私名单上(见 [com.wangzan101.mika.core.privacy.SensitiveApps]),Mika 不挪、不看它。
  */
 data class OpenedElsewhere(
     val packageName: String, val app: String?, val pulledBack: Boolean, val inProfile: String? = null, val picker: Boolean = false,
     val closed: Boolean = false, val byUser: Boolean = false, val needsUser: Boolean = false,
+    val onItsOwn: Boolean = false, val leftAlone: Boolean = false, val blocked: Boolean = false,
 ) {
     /** 此刻还在用户的主屏上(用户正用着,或系统正在问用户)。 */
     val onUserScreen: Boolean get() = !pulledBack && !closed && !byUser
+
+    /** 留在用户屏上、不用用户管、也不挡模型下一个动作的:自己开出来的、隐私名单上的。 */
+    val leftOnUserScreenQuietly: Boolean get() = !pulledBack && (onItsOwn || blocked)
 
     fun toJson(): JsonObject = buildJsonObject {
         put("package", packageName)
@@ -118,6 +127,9 @@ data class OpenedElsewhere(
         if (picker) put("picker", true)
         if (closed) put("closed", true)
         if (byUser) put("byUser", true)
+        if (onItsOwn) put("onItsOwn", true)
+        if (leftAlone) put("leftAlone", true)
+        if (blocked) put("blockedByPrivacy", true)
     }
 
     companion object {
@@ -133,7 +145,12 @@ data class ScreenEvent(val type: String, val packageName: String?, val text: Str
 data class VisibleTextLine(val text: String, val bounds: List<Int>, val confidence: Float? = null)
 
 /** 内置助手以 Android shell 身份执行命令的结果。 */
-data class SystemCommandResult(val exitCode: Int, val output: String)
+data class SystemCommandResult(val exitCode: Int, val output: String) {
+    companion object {
+        /** 隐私名单挡下、没执行的命令的 [exitCode];[output] 是说明。 */
+        const val BLOCKED_BY_PRIVACY = -126
+    }
+}
 
 /** 输入后读回输入框的核对结果;读不回来(密码框、读不到节点)为 UNKNOWN。 */
 enum class Verification(val wire: String) { MATCH("match"), MISMATCH("mismatch"), UNKNOWN("unknown") }
@@ -153,6 +170,8 @@ sealed interface ActionResult {
      * [inProfile] 刚到前台的 App 装了两份时开的是哪一份(见 [OpenedElsewhere.inProfile]):系统问过打开哪一个之后,
      * 以及目标 App 列出过另一份、或要的就是另一份时每次都报;[profileUser] 是此刻屏上那一份所属的用户编号,
      * [requestedUser] 是打开时要的那份用户(要的是本来那份为 null)。
+     * [switchedPulledBack] 新前台是之前从用户主屏挪回 Mika 屏上的任务:不一定是目标 App 打开的,不说成「目标 App 打开的」;
+     * [returnedToUser] 这段时间里没经这个任务打开、却冒到 Mika 屏上的 App,已送回用户的主屏(包名)。
      */
     data class Ok(
         val changed: Boolean? = null,
@@ -170,6 +189,8 @@ sealed interface ActionResult {
         val inProfile: String? = null,
         val profileUser: Int? = null,
         val requestedUser: Int? = null,
+        val switchedPulledBack: Boolean = false,
+        val returnedToUser: List<String> = emptyList(),
     ) : ActionResult
 
     /** 引用已过期时 reason 为 "ref_expired"。[hint] 是端口的补充说明(例如盖住目标的是什么),原样附在错误说明后。 */
@@ -280,4 +301,13 @@ interface ScreenPort {
 
     /** 此刻画面缩成的亮度格子(判动作效果用,见 [FrameGrid.sample]);没有画面、端口不支持时为 null。要便宜:不编码图片。 */
     suspend fun frameGrid(): FrameGrid? = null
+
+    /** 此刻 Agent 屏最上面的 App 包名(便宜,不读无障碍树);没有画面或不支持时为 null。隐私名单据此判定。 */
+    suspend fun foregroundPackage(): String? = null
+
+    /** 此刻用户主屏最上面的 App 包名;不支持时为 null。 */
+    suspend fun mainScreenPackage(): String? = null
+
+    /** 把 Agent 屏上 [packageName] 的任务送回用户的主屏(隐私名单上的 App 用);送走了为 true,不支持为 false。 */
+    suspend fun sendToUserScreen(packageName: String): Boolean = false
 }

@@ -118,6 +118,11 @@ elif args == ["get-state"]:
 elif args[:2] == ["shell", "sh"]:
     print("bootstrap " + cfg["info"]["token"])
     sys.exit(cfg.get("bootstrap_exit", 0))
+elif args[:4] == ["shell", "pm", "list", "packages"]:
+    wanted = args[4] if len(args) > 4 else ""
+    for package in cfg.get("packages", ["com.wangzan101.mika"]):
+        if wanted in package:
+            print("package:" + package)
 elif args[:2] == ["shell", "cat"]:
     print(json.dumps(cfg["info"]))
 elif args[:3] == ["shell", "settings", "get"]:
@@ -241,6 +246,47 @@ else:
             self.assertIn(["-s", "phone-a", "forward", "tcp:0", "tcp:8765"], calls())
             self.assertEqual(["-s", "phone-a", "forward", "--remove", "tcp:" + str(server.server_port)], calls()[-1])
             self.assertTrue(any(c[2:4] == ["shell", "sh"] for c in calls()))
+
+    def test_adb_autodetects_the_only_installed_build(self):
+        with api() as server:
+            adb, env, _, calls = self.fake_adb(server, packages=["com.wangzan101.mika.tester", "com.wangzan101.mika.tester.test"])
+            result, body = self.invoke("connect", "--adb", str(adb), env=env)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual("com.wangzan101.mika.tester", body["package"])
+            files = "/sdcard/Android/data/com.wangzan101.mika.tester/files/"
+            self.assertIn(["-s", "phone-a", "shell", "sh", files + "connect-computer.sh"], calls())
+            self.assertIn(["-s", "phone-a", "shell", "cat", files + "mcp-usb.json"], calls())
+
+    def test_several_builds_need_explicit_package(self):
+        builds = ["com.wangzan101.mika", "com.wangzan101.mika.voice", "com.wangzan101.mika.tester"]
+        with api() as server:
+            adb, env, _, calls = self.fake_adb(server, packages=builds)
+            result, body = self.invoke("doctor", "--adb", str(adb), env=env)
+            self.assertEqual("package_selection", body["error"]["code"])
+            self.assertEqual(builds, body["error"]["packages"])
+            self.assertFalse(any("forward" in c or "cat" in c for c in calls()))
+            result, body = self.invoke("doctor", "--adb", str(adb), "--package", "com.wangzan101.mika.voice", env=env)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            self.assertEqual("com.wangzan101.mika.voice", body["package"])
+            self.assertIn(["-s", "phone-a", "shell", "cat", "/sdcard/Android/data/com.wangzan101.mika.voice/files/mcp-usb.json"], calls())
+
+    def test_requested_package_must_be_installed_and_well_formed(self):
+        with api() as server:
+            adb, env, _, calls = self.fake_adb(server)
+            result, body = self.invoke("doctor", "--adb", str(adb), "--package", "com.wangzan101.mika.tester", env=env)
+            self.assertEqual("package_not_installed", body["error"]["code"])
+            self.assertFalse(any("cat" in c for c in calls()))
+            result, body = self.invoke("doctor", "--adb", str(adb), "--package", "x; rm -rf /", env=env)
+            self.assertEqual("arguments", body["error"]["code"])
+            result, body = self.invoke("doctor", "--package", "com.wangzan101.mika", server=server)
+            self.assertEqual("arguments", body["error"]["code"])
+
+    def test_no_installed_build_is_reported(self):
+        with api() as server:
+            adb, env, _, calls = self.fake_adb(server, packages=[])
+            result, body = self.invoke("connect", "--adb", str(adb), env=env)
+            self.assertEqual("package_not_installed", body["error"]["code"])
+            self.assertFalse(any(c[2:4] == ["shell", "sh"] for c in calls()))
 
     def test_multiple_phones_need_explicit_device(self):
         with api() as server:

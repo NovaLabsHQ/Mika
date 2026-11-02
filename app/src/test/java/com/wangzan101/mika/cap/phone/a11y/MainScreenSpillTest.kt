@@ -1,6 +1,10 @@
 package com.wangzan101.mika.cap.phone.a11y
 
 import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.InUse
+import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.OnItsOwn
+import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.SelfLaunch
+import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.SelfSignals
+import org.junit.Assert.assertNull
 import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.PullBack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -10,23 +14,111 @@ class MainScreenSpillTest {
     private val since = 10_000L
     private val window = 6_000L
     private val home = setOf("com.home", "com.wangzan101.mika")
+    private val background = 2_000L
 
     private fun arrival(
         task: Int = 7, pkg: String? = "com.chat", at: Long = since + 500, from: Int = MainScreenSpill.NEW,
         sameTask: Boolean = false, standard: Boolean = true, now: Int = MainScreenSpill.MAIN, user: Int = 0,
     ) = MainScreenSpill.Arrival(task, pkg, user, at, from, sameTask, standard, now)
 
-    private fun decide(vararg a: MainScreenSpill.Arrival, topBefore: Int = 3, taps: List<MainScreenSpill.Tap> = emptyList()) =
-        MainScreenSpill.decide(a.toList(), since, window, topBefore, home, taps)
+    private fun decide(
+        vararg a: MainScreenSpill.Arrival, topBefore: Int = 3, taps: List<MainScreenSpill.Tap> = emptyList(),
+        self: SelfSignals = SelfSignals.NONE,
+    ) = MainScreenSpill.decide(a.toList(), since, window, topBefore, home, taps, backgroundWindowMs = background, self = self)
+
+    @Test fun appThatNotifiedRightBeforeItCameUpOpenedOnItsOwn() {
+        // Instacart Shopper 来单:先发通知再自己弹出窗口,用户没动手。不挪,报成自己开的
+        val a = arrival(pkg = "com.instacart.shopper", at = since + 1_200)
+        val self = SelfSignals(notified = mapOf("com.instacart.shopper" to since + 900), actionEnded = since + 400)
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.Notified)), decide(a, self = self))
+        // 通知太早(10 秒前)的不算
+        val old = SelfSignals(notified = mapOf("com.instacart.shopper" to a.at - MainScreenSpill.NOTIFY_LEAD_MS - 1), actionEnded = since + 400)
+        assertEquals(listOf(PullBack(a)), decide(a, self = old))
+        // 通知比窗口稍晚到也算
+        val after = SelfSignals(notified = mapOf("com.instacart.shopper" to a.at + 1_000))
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.Notified)), decide(a, self = after))
+    }
+
+    @Test fun appOtherThanTheOneBeingOpenedOpenedOnItsOwn() {
+        val a = arrival(pkg = "com.instacart.shopper")
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.NotTheTarget)), decide(a, self = SelfSignals(expected = "com.android.chrome")))
+        // 开的就是它:照常挪回来
+        val b = arrival(pkg = "com.android.chrome")
+        assertEquals(listOf(PullBack(b)), decide(b, self = SelfSignals(expected = "com.android.chrome")))
+    }
+
+    @Test fun appComingUpLongAfterTheActionEndedOpenedOnItsOwn() {
+        val a = arrival(at = since + 5_000)
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.AfterTheAction)), decide(a, self = SelfSignals(actionEnded = since + 1_000)))
+        val soon = arrival(at = since + 1_500)
+        assertEquals(listOf(PullBack(soon)), decide(soon, self = SelfSignals(actionEnded = since + 1_000)))
+    }
+
+    @Test fun knownSelfLauncherOpenedOnItsOwn() {
+        val a = arrival(pkg = "com.instacart.shopper")
+        assertEquals(listOf(OnItsOwn(a, SelfLaunch.Known)), decide(a, self = SelfSignals(known = setOf("com.instacart.shopper"))))
+    }
+
+    @Test fun systemPackagesAreNeverTreatedAsSelfLaunched() {
+        // 系统的选择器、弹窗另有处理(留给用户选、留在用户屏上),不按「自己开的」判
+        val a = arrival(pkg = "com.android.intentresolver")
+        val self = SelfSignals(expected = "com.chat", actionEnded = since, notified = mapOf("com.android.intentresolver" to a.at), system = { it.startsWith("com.android.") })
+        assertNull(MainScreenSpill.selfLaunched(a, self))
+        assertEquals(listOf(PullBack(a)), decide(a, self = self))
+    }
+
+    @Test fun userInputStillWinsOverSelfLaunchSignals() {
+        // 用户在主屏上点了东西:是用户开的,不说自己开的
+        val a = arrival(pkg = "com.instacart.shopper", at = since + 1_200)
+        val taps = listOf(MainScreenSpill.Tap(since + 1_000, "com.home"))
+        val self = SelfSignals(notified = mapOf("com.instacart.shopper" to since + 900))
+        assertTrue(decide(a, taps = taps, self = self).none { it is OnItsOwn })
+    }
 
     @Test fun newTaskOnTheMainScreenRightAfterTheActionIsPulledBack() {
         assertEquals(listOf(PullBack(arrival())), decide(arrival()))
     }
 
-    @Test fun backgroundTaskOnTheMainScreenBroughtToFrontIsPulledBackToo() {
-        // 系统把那个 App 已有的后台任务拉到前台,不新建任务
+    @Test fun backgroundTaskOnTheMainScreenBroughtToFrontIsReportedNotPulledBack() {
+        // 系统把那个 App 已有的后台任务拉到前台,不新建任务:那是用户手上的 App(用户反馈 Instacart Shopper、YouTube
+        // 被拉进了 Mika 的屏),只报给模型,不从用户眼前抽走
         val a = arrival(from = MainScreenSpill.MAIN)
-        assertEquals(listOf(PullBack(a)), decide(a))
+        assertEquals(listOf(InUse(a)), decide(a))
+    }
+
+    @Test fun backgroundTaskComingUpLateIsTheUsersOwnSwitch() {
+        // 后台任务过了 2 秒才到前台:多半是用户自己切过去的,不算这个动作的
+        assertTrue(decide(arrival(from = MainScreenSpill.MAIN, at = since + background + 1)).isEmpty())
+        // 新开的任务照旧按整个窗口算
+        val late = arrival(at = since + background + 1)
+        assertEquals(listOf(PullBack(late)), decide(late))
+    }
+
+    @Test fun backgroundRuleIsOffForThePickedApp() {
+        val a = arrival(from = MainScreenSpill.MAIN)
+        assertEquals(listOf(PullBack(a)), MainScreenSpill.decide(listOf(a), since, window, 3, home, emptyList(), backgroundInUse = false))
+    }
+
+    @Test fun userGoingHomeOrToRecentsMeansTheUserOpenedWhatCameNext() {
+        // 桌面、最近任务这类任务冒到了最上面:用户在自己屏上动了手
+        val launcher = arrival(task = 2, pkg = "com.recents", at = since + 300, standard = false)
+        assertTrue(decide(launcher, arrival(at = since + 900)).isEmpty())
+        // 用户回桌面、拉通知栏的窗口变化记成点按,一样算
+        assertTrue(decide(arrival(at = since + 900), taps = listOf(MainScreenSpill.Tap(since + 300, "com.android.systemui"))).isEmpty())
+    }
+
+    @Test fun previousTopShowingAgainIsNotTheUserActing() {
+        // 动作前就在最上面的桌面又露出来(挪走别的之后露出来的):不算用户动手
+        val top = arrival(task = 3, pkg = "com.home", at = since + 300, standard = false)
+        val next = arrival(at = since + 900)
+        assertEquals(listOf(PullBack(next)), decide(top, next))
+    }
+
+    @Test fun userActedLooksOnlyBeforeTheArrival() {
+        val taps = listOf(MainScreenSpill.Tap(since + 200, "com.x"))
+        assertTrue(MainScreenSpill.userActed(since, since + 500, taps, emptyList(), 3))
+        assertTrue(!MainScreenSpill.userActed(since, since + 100, taps, emptyList(), 3))
+        assertTrue(!MainScreenSpill.userActed(since + 300, since + 500, taps, emptyList(), 3))
     }
 
     @Test fun outsideTheWindowIsNotThisAction() {

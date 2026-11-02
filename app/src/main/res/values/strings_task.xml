@@ -20,7 +20,8 @@
     <string name="gate_pick_system">The system is asking which one to use. Please choose on screen</string>
     <string name="gate_finish_app">“%1$s” needs you on screen. Tap Continue when done</string>
     <string name="gate_finish_unknown">The app just opened needs you on screen. Tap Continue when done</string>
-    <string name="gate_moved_away">You opened this app. Tap Continue when you’re done</string>
+    <string name="gate_moved_away">You opened this app on your screen. Android allows one copy, so Mika paused. Close it or tap Continue.</string>
+    <string name="gate_moved_away_app">You opened %1$s on your screen. Android allows one copy, so Mika paused. Close it or tap Continue.</string>
     <string name="gate_move_back_failed">Couldn’t move the app back to Mika’s screen. Tap Continue to retry</string>
     <string name="gate_shell_down">Phone control disconnected. Tap Continue once it reconnects (or fix it in Settings)</string>
     <plurals name="queue_ahead">

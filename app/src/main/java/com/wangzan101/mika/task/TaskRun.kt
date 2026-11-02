@@ -1,5 +1,6 @@
 package com.wangzan101.mika.task
 
+import com.wangzan101.mika.core.privacy.PrivacyScreen
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
@@ -151,6 +152,8 @@ class TaskRun(
     internal var triggerActionGoal: String? = null
     internal var triggerThreadId: String? = null
     internal var mcpExternalId: String? = null
+    /** 看板交来的任务在 [com.wangzan101.mika.board.BoardRuntime] 里的运行编号。 */
+    internal var boardExternalId: String? = null
     internal val conditionCheck get() = triggerActionGoal != null
     @Volatile private var children: ChildAgentRunner? = null
     /** 自己的一份;显示中时同步写到服务对外的那份。[show] 时整份抄过去。 */
@@ -447,6 +450,10 @@ class TaskRun(
             val states = DeviceStateWatcher(service) { id -> phone?.shell?.topTaskId(id) ?: -1 }.also { watcher = it }
 
             /** 接上手机:连内置助手、等无障碍、备好(到第一次 launch_app 才建的)虚拟屏;缺一样就报 phone_unavailable。 */
+            // 设置 › 隐私与数据 › 敏感 App:每次现读,改了马上生效
+            val privacy = { pkg: String -> FeatureFlags.get(service).sensitiveApps().blocked(pkg) }
+            // 预览画面(胶囊、主界面)在虚拟屏建好时就开始收,那时还没有 AndroidScreen:接上后记在这里,挡住的 App 在前时不送画面
+            var shownScreen: AndroidScreen? = null
             suspend fun connectPhone(): AndroidScreen {
                 // 版本要求只属于手机操作;旧系统仍可聊天、使用网页和沙箱,也不应被引导去配对不支持的助手。
                 if (Build.VERSION.SDK_INT < Prerequisites.MIN_SDK) throw PhoneUnavailable(TaskService.TOO_OLD)
@@ -482,7 +489,9 @@ class TaskRun(
                         create()
                     }.also { d ->
                         _displayId.value = d.displayId
-                        side.launch { d.frames.collect { if (dispatcher?.surface != WEB) _frames.value = it } }
+                        side.launch {
+                            d.frames.collect { if (dispatcher?.surface != WEB) _frames.value = it.takeUnless { shownScreen?.blockedOnTop == true } }
+                        }
                     }
                 }
                 val screen = AndroidScreen(
@@ -497,11 +506,23 @@ class TaskRun(
                     handedOver = { handoverRef?.handedOver == true },
                     // 打字一段一段出来;App 知识说限制浏览快慢的 App 打得更慢
                     typing = { pkg -> pace.typing(PlacePace.of(pkg?.let(skills::appPace))) },
+                    // 设置 › 干活时 › 别动这些 App:每次现读,改了马上生效
+                    leaveAlone = { FeatureFlags.get(service).leaveAloneApps() },
+                    blocked = privacy,
                 )
+                shownScreen = screen
                 val audio = recovery.audioMute(shell, key).also { mute = it }
                 val side0 = PhoneSide(shell, a11y, screen, agentDisplay, audio)
                 phone = side0
                 watchTarget(side0, states)
+                // 不该在 Mika 屏上的 App(不是这个任务打开的、也不是挪回来的):送回用户的主屏,记进运行记录
+                side.launch {
+                    while (true) {
+                        delay(INTRUDER_POLL_MS)
+                        val pkg = try { screen.returnIntruder() } catch (e: CancellationException) { throw e } catch (e: Exception) { null } ?: continue
+                        record?.let { r -> withContext(Dispatchers.IO) { runCatching { r.event(RunEvent.State(System.currentTimeMillis(), "intruder_returned", pkg)) } } }
+                    }
+                }
                 return screen
             }
             val phoneScreen = LazyPhoneScreen(metrics.widthPixels, metrics.heightPixels,
@@ -512,6 +533,10 @@ class TaskRun(
                         withContext(Dispatchers.IO) { runCatching { AppCopyReader.read(s, launchableApps(service.packageManager, service.packageName)) }.getOrNull() }
                     }.orEmpty()
                 }) { connectPhone() }
+            // 模型用的手机端口外面再包一层隐私名单:挡住的 App 打不开、读不到、点不了(见 PrivacyScreen)
+            val agentPhone = PrivacyScreen(phoneScreen, privacy, label = { pkg ->
+                withContext(Dispatchers.IO) { runCatching { service.packageManager.getApplicationLabel(service.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrNull() }
+            })
             // 挪回虚拟屏后等窗口出现,Agent 接下来读屏才读得到
             suspend fun moveTask(taskId: Int, to: Int): Boolean {
                 val p = phone ?: return false
@@ -605,10 +630,10 @@ class TaskRun(
             val runSpec = RunSpec(RunId(key), goal, conversationId,
                 priorTurns,
                 provenance, if (conditionCheck) setOf("web", "sandbox") else null, readOnly = conditionCheck)
-            val runApproval = approvalControl.start(remote = provenance.origin == RunOrigin.Mcp).also { approval = it }
+            val runApproval = approvalControl.start(remote = provenance.origin == RunOrigin.Mcp || provenance.origin == RunOrigin.Channel).also { approval = it }
             val childRunner = if (provenance.origin == RunOrigin.Ui && web != null) ChildAgentRunner(
                 create = { childSpec ->
-                    val childTools = toolDispatcher(phoneScreen, model.capabilities.vision,
+                    val childTools = toolDispatcher(agentPhone, model.capabilities.vision,
                         web = web, webPacing = { PagePacing.human() }, webPlacePace = { PlacePace.of(catalog.sitePace(it)) },
                         webIdleScroll = { IdleScroll(Random.Default) },
                         appPacing = { pace.appPacing() }, appPace = { PlacePace.of(catalog.appPace(it)) }, appIdleScroll = { IdleScroll(Random.Default) },
@@ -623,7 +648,7 @@ class TaskRun(
                 store = (service.application as MikaApp).childRuns,
                 ownerAlive = { job?.isActive == true },
             ).also { children = it } else null
-            val tools = toolDispatcher(phoneScreen, model.capabilities.vision, catalog, recordFrames = true, vision = vision?.let { VisionService(it, BitmapImageOps) },
+            val tools = toolDispatcher(agentPhone, model.capabilities.vision, catalog, recordFrames = true, vision = vision?.let { VisionService(it, BitmapImageOps) },
                 stableRefs = speed.inlineScreen, inlineScreen = speed.inlineScreen,
                 adaptiveVision = speed.adaptiveVision,
                 deepLinks = speed.deepLinks, memory = memory, profile = if (memory != null) memoryRuntime.profile() else null,
@@ -670,7 +695,8 @@ class TaskRun(
                 },
                 maxSteps = env.evalHooks.maxSteps ?: AgentLoop.UNLIMITED_STEPS,
                 reviewFinalAnswer = false,
-                inputTimeoutMs = TaskService.INPUT_TIMEOUT_MS,
+                // 看板任务按 issue 里写的 ask_timeout_min 等回答
+                inputTimeoutMs = boardExternalId?.let { (service.application as MikaApp).board.askTimeoutMs(it) } ?: TaskService.INPUT_TIMEOUT_MS,
                 // 询问 / 自主:询问时只有花钱的一步先问(有确认关卡和 request_confirmation);自主时连付款也不问。
                 // 开工时询问、中途换成自主的,下一步起不再问;开工时自主的,换成询问留给下一个任务
                 confirmations = runApproval.gate(),
@@ -686,7 +712,7 @@ class TaskRun(
                 routes = if (speed.replay) RouteMatcher(light ?: model, routeStore, knowledge) else null,
                 skills = catalog,
                 memory = memory,
-                interaction = service.interaction(conversationId),
+                interaction = service.interaction(conversationId, boardExternalId),
                 profileSnapshot = profileSnapshot,
                 streamReplies = true,
                 userScreens = userScreens,
@@ -868,7 +894,9 @@ class TaskRun(
                     states.taskMovedAway(displayId, t.taskId).collect {
                         // 用户点「我来处理」后 App 本来就该在主屏
                         if (handoverRef?.handedOver == true) return@collect
-                        gate?.onTaskMovedAway()
+                        // 用户拿回去的 App 这次运行不再从主屏挪回来
+                        p.screen.leftAgentScreen(t.packageName)
+                        gate?.onTaskMovedAway(ConfirmationNotifier.appLabel(service, t.packageName))
                         publish(_state.value) // 立即显示暂停,不等下一个改动屏幕的工具
                     }
                 }
@@ -1011,7 +1039,7 @@ class TaskRun(
         // 循环自己报的终态不往外发:终态只由 [end] 在记好运行编号之后写,否则界面先收到结束、拿不到编号
         if (!TaskService.loopMayPublish(state)) return
         val shown = when {
-            state is TaskState.Running && gate?.movedAwayPending == true -> TaskState.Held(TaskGate.paused(TaskGate.MOVED_AWAY))
+            state is TaskState.Running && gate?.movedAwayPending == true -> TaskState.Held(TaskGate.paused(gate?.movedAwayReason ?: TaskGate.MOVED_AWAY))
             // 用户在借出的页面上操作:到关卡之前也先显示暂停
             state is TaskState.Running && gate?.userOnPagePending == true -> TaskState.Held(TaskGate.paused(TaskGate.USER_ON_PAGE))
             else -> state
@@ -1045,6 +1073,8 @@ class TaskRun(
         const val WEB_FRAME_MS = 500L
         const val SHELL_WAIT_MS = 15_000L
         const val DISPLAY_RETRY_MS = 1_000L
+        /** 多久看一次 Mika 屏上有没有不该在这里的 App。 */
+        const val INTRUDER_POLL_MS = 1_000L
         val WAITING_DISPLAY: String get() = tr(R.string.task_waiting_display)
         const val A11Y_WAIT_MS = 5_000L
         val NO_PHONE_HELPER: String get() = tr(R.string.task_no_phone_helper)

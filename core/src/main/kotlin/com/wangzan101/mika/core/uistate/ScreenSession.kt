@@ -139,6 +139,8 @@ internal class ScreenSession(
 
     suspend fun observe(withImage: Boolean, adaptiveImage: Boolean = false, recordFrame: Boolean = true): ToolExecution {
         val s = snapshot()
+        // 隐私名单上的 App:不读文字、不截图、不留回看,只说是哪个 App
+        s.blockedApp?.let { return ToolExecution(blockedJson(s, it, shots.next())) }
         val (tree, ocr, ocrStatus) = readTree(s)
         val imageReason = if (adaptiveImage && tree.poor) tree.reason else null
         val sendImage = withImage || imageReason != null
@@ -188,7 +190,7 @@ internal class ScreenSession(
     suspend fun currentFrame(): Pair<ByteArray, Int>? {
         if (!visionEnabled) return null
         val s = try { screen.peek() } catch (e: CancellationException) { throw e } catch (e: Exception) { return null }
-        if (s.protected) return null
+        if (s.protected || s.blockedApp != null) return null
         if (s.packageName == null && s.elements.isEmpty() && !s.hasWindow) return null
         val png = try {
             if (screen.isProtected()) null else screen.screenshotPng()
@@ -206,6 +208,11 @@ internal class ScreenSession(
         if (!visionEnabled && !adaptiveVision) return null
         val peeked = try { screen.peek() } catch (e: CancellationException) { throw e } catch (e: Exception) { return null }
         if (peeked.packageName == null && peeked.elements.isEmpty() && !peeked.hasWindow) return null
+        if (peeked.blockedApp != null) {
+            val obs = try { observe(withImage = false, recordFrame = false) } catch (e: CancellationException) { throw e } catch (e: Exception) { return null }
+            val shotId = (obs.content["screenshotId"] as? JsonPrimitive)?.content?.toIntOrNull() ?: return null
+            return ToolDispatcher.Glance(JsonObject(obs.content - "ok"), null, shotId, obs.observations)
+        }
         if (textOnlyDepth > 0) {
             val obs = try { observe(withImage = false, recordFrame = false) }
             catch (e: CancellationException) { throw e } catch (e: Exception) { return null }
@@ -259,6 +266,10 @@ internal class ScreenSession(
         // 连续差异最多 MAX_CHAIN_DIFFS 次就发一次全量:链越长越难读,压缩时要保留的往返也越多
         val seen = chain.isNotEmpty() && chain.size - 1 < MAX_CHAIN_DIFFS && (v == null || chain.all { it in v })
         val s = cur.screen
+        s.blockedApp?.let { pkg ->
+            shown = null; chain.clear()
+            return r.with(content = JsonObject(r.content + ("screen" to onSurface(blockedJson(s, pkg, shots.next(), full = false)))), screenElements = JsonArray(emptyList()))
+        }
         val (tree, ocr, ocrStatus) = readTree(s)
         val shotId = shots.next()
         val diff = if (s.protected) {
@@ -370,7 +381,10 @@ internal class ScreenSession(
             switchedTo = (c["app_switched"] as? JsonPrimitive)?.content,
             verified = c["verification"] == JsonPrimitive("match"),
             loading = c["settled"] == JsonPrimitive(false),
-            onUserScreen = opened?.takeIf { it["onUserScreen"] == JsonPrimitive(true) }?.let { (it["package"] as? JsonPrimitive)?.content },
+            // 自己开出来的、隐私名单上的不是这个动作开的:不算动作的效果
+            onUserScreen = opened?.takeIf {
+                it["onUserScreen"] == JsonPrimitive(true) && it["onItsOwn"] != JsonPrimitive(true) && it["blockedByPrivacy"] != JsonPrimitive(true)
+            }?.let { (it["package"] as? JsonPrimitive)?.content },
         )
         val portWaited = r.changed != null || "settled" in c
         val fresh = reads > readsAtAction
@@ -453,6 +467,17 @@ internal class ScreenSession(
      * 树明显够用、受保护时不读字;判不准时读字再定;树不够用时一定读字:看不到图的主模型靠它,
      * 能看图的主模型也拿它的位置去点,证据账本(回答来源、核查)和 phone_collect 也只能从这里拿到屏上写着什么。
      */
+    /** 隐私名单上的 App 在最上面时给模型的一屏:没有元素、文字和画面。 */
+    private fun blockedJson(s: ScreenSnapshot, pkg: String, shotId: Int, full: Boolean? = null) = okObj {
+        put("currentApp", pkg)
+        put("snapshotId", s.snapshotId)
+        put("screenshotId", shotId)
+        full?.let { put("full", it) }
+        put("blockedByPrivacy", true)
+        put("hint", Feedback.format("blocked_by_privacy", "app" to pkg))
+        put("elements", JsonArray(emptyList()))
+    }
+
     private suspend fun readTree(s: ScreenSnapshot): TreeRead {
         val tree = TreeAdequacy.ofTree(s)
         if (tree.quality == TreeQuality.Adequate || tree.quality == TreeQuality.Protected) return TreeRead(tree, null, null).also { lastTree = it.tree }
