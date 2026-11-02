@@ -1,0 +1,147 @@
+# Build the side-by-side voicedev APK and refresh the voice-latest prerelease.
+# JDK 17 matches the README. compileSdk is 36; AGP 8.7.3's default build-tools
+# is 34.0.0 (the project does not set buildToolsVersion). Sandbox binaries are
+# already in jniLibs, so this assemble does not need the NDK.
+
+name: Build voice APK
+
+on:
+  push:
+    branches:
+      - feature/voice
+  workflow_dispatch:
+
+# contents: write publishes the voice-latest release. actions: write uploads the
+# artifact and stores the Gradle cache. An explicit permissions block drops
+# every scope that is not listed.
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: build-voice-apk
+  cancel-in-progress: true
+
+jobs:
+  assemble:
+    name: assembleVoicedev
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          accept-android-sdk-licenses: true
+          packages: platform-tools
+
+      - name: Install Android SDK platform 36 and build-tools
+        run: |
+          set -euo pipefail
+          # Accept licenses again so sdkmanager cannot stop on a prompt.
+          # `yes` is closed with SIGPIPE (141) once sdkmanager exits; that is fine.
+          set +e
+          yes | sdkmanager --licenses
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 && "$status" -ne 141 ]]; then
+            echo "sdkmanager --licenses failed with exit ${status}" >&2
+            exit "$status"
+          fi
+          sdkmanager --install "platforms;android-36" "build-tools;34.0.0"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            echo "ANDROID_SDK_ROOT and ANDROID_HOME are unset" >&2
+            exit 1
+          fi
+          test -d "${sdk_root}/platforms/android-36"
+          test -d "${sdk_root}/build-tools/34.0.0"
+          sdkmanager --list_installed
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # GitHub Actions cache. The enhanced provider uses the commercial
+          # Gradle cache service, which this repo is not set up for.
+          cache-provider: basic
+          # Off the default branch the action defaults to read-only, so a
+          # feature/voice build would never save a cache.
+          cache-read-only: false
+
+      - name: Assemble voicedev APK
+        run: ./gradlew :app:assembleVoicedev
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: mika-voice-apk
+          path: app/build/outputs/apk/voicedev/*.apk
+          if-no-files-found: error
+
+      - name: Publish voice-latest prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/voicedev/*.apk)
+          if [[ ${#apks[@]} -eq 0 ]]; then
+            echo "No APK under app/build/outputs/apk/voicedev/" >&2
+            exit 1
+          fi
+          echo "Built APKs:"
+          printf '  %s\n' "${apks[@]}"
+          src=""
+          for f in "${apks[@]}"; do
+            case "$(basename "$f")" in
+              *unsigned*) ;;
+              *) src="$f" ;;
+            esac
+          done
+          if [[ -z "$src" ]]; then
+            src="${apks[0]}"
+          fi
+          cp "$src" "${RUNNER_TEMP}/mika-voice.apk"
+          ls -lh "${RUNNER_TEMP}/mika-voice.apk"
+
+          if gh release view voice-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete voice-latest --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
+          if git ls-remote --exit-code --tags origin refs/tags/voice-latest >/dev/null 2>&1; then
+            git push origin :refs/tags/voice-latest
+          fi
+
+          download_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/voice-latest/mika-voice.apk"
+          notes="Side-by-side voicedev debug APK (application id com.wangzan101.mika.voice).
+          Built from ${GITHUB_SHA} on feature/voice. It installs next to release Mika, keeps its own data, and uses MCP port 18765.
+          Direct download: ${download_url}"
+          notes="$(printf '%s\n' "$notes" | sed 's/^          //')"
+
+          attempt=1
+          while true; do
+            if gh release create voice-latest "${RUNNER_TEMP}/mika-voice.apk" \
+                --repo "$GITHUB_REPOSITORY" \
+                --prerelease \
+                --latest=false \
+                --target "$GITHUB_SHA" \
+                --title "Mika Voice (voice-latest)" \
+                --notes "$notes"; then
+              break
+            fi
+            if [[ "$attempt" -ge 5 ]]; then
+              echo "gh release create failed" >&2
+              exit 1
+            fi
+            attempt=$((attempt + 1))
+            sleep $((attempt * 3))
+          done
+
+          echo "Download: ${download_url}" >> "$GITHUB_STEP_SUMMARY"
