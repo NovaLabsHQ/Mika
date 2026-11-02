@@ -81,6 +81,12 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     val resources = ResourceScheduler()
     val remoteTasks by lazy { RemoteTaskHub(this) }
 
+    /** 任务看板(GitHub issues):设置(令牌加密另存)和轮询到的任务;只在 BuildConfig.TESTER_BOARD 的包里能打开。 */
+    val board by lazy {
+        com.wangzan101.mika.board.BoardRuntime(this,
+            com.wangzan101.mika.settings.BoardSettings(java.io.File(filesDir, "settings"), com.wangzan101.mika.settings.KeystoreKeyCipher("mika-board-keys")))
+    }
+
     /**
      * 电脑连接(MCP):开关、访问令牌(和服务商的 Key 一样加密存)、监听。局域网那种默认关着;
      * USB 那种由电脑经 adb 打开,只到这次关机为止(开机编号和 shell 里 `settings get global boot_count` 读到的一样)。
