@@ -7,6 +7,7 @@ import android.content.Context
 import android.view.Display
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.wangzan101.mika.confirm.ConfirmationNotifier
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.SETTINGS
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.pollUntil
@@ -198,9 +199,11 @@ class TaskServiceTest {
         // 模拟用户在主屏打开了同一个 App:任务被挪到主屏
         assertTrue(shell.moveTask(settingsTask, Display.DEFAULT_DISPLAY))
         // 模型还在「推理」(没走到 gate)时就应立即显示暂停
-        assertEquals(TaskState.Held(TaskGate.paused(TaskGate.MOVED_AWAY)), awaitState { it is TaskState.Held })
+        // 暂停的那句说出是哪个 App
+        val movedAway = TaskGate.paused(TaskGate.movedAwayCopy(ConfirmationNotifier.appLabel(context, SETTINGS)))
+        assertEquals(TaskState.Held(movedAway), awaitState { it is TaskState.Held })
         model.feed("phone_back")
-        assertEquals(TaskState.Held(TaskGate.paused(TaskGate.MOVED_AWAY)), awaitState { it is TaskState.Held })
+        assertEquals(TaskState.Held(movedAway), awaitState { it is TaskState.Held })
         // 暂停期间不自动挪回
         Thread.sleep(1_500)
         assertEquals(settingsTask, shell.topTaskId(Display.DEFAULT_DISPLAY))

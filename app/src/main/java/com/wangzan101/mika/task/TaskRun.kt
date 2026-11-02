@@ -499,11 +499,21 @@ class TaskRun(
                     handedOver = { handoverRef?.handedOver == true },
                     // 打字一段一段出来;App 知识说限制浏览快慢的 App 打得更慢
                     typing = { pkg -> pace.typing(PlacePace.of(pkg?.let(skills::appPace))) },
+                    // 设置 › 干活时 › 别动这些 App:每次现读,改了马上生效
+                    leaveAlone = { FeatureFlags.get(service).leaveAloneApps() },
                 )
                 val audio = recovery.audioMute(shell, key).also { mute = it }
                 val side0 = PhoneSide(shell, a11y, screen, agentDisplay, audio)
                 phone = side0
                 watchTarget(side0, states)
+                // 不该在 Mika 屏上的 App(不是这个任务打开的、也不是挪回来的):送回用户的主屏,记进运行记录
+                side.launch {
+                    while (true) {
+                        delay(INTRUDER_POLL_MS)
+                        val pkg = try { screen.returnIntruder() } catch (e: CancellationException) { throw e } catch (e: Exception) { null } ?: continue
+                        record?.let { r -> withContext(Dispatchers.IO) { runCatching { r.event(RunEvent.State(System.currentTimeMillis(), "intruder_returned", pkg)) } } }
+                    }
+                }
                 return screen
             }
             val phoneScreen = LazyPhoneScreen(metrics.widthPixels, metrics.heightPixels,
@@ -871,7 +881,9 @@ class TaskRun(
                     states.taskMovedAway(displayId, t.taskId).collect {
                         // 用户点「我来处理」后 App 本来就该在主屏
                         if (handoverRef?.handedOver == true) return@collect
-                        gate?.onTaskMovedAway()
+                        // 用户拿回去的 App 这次运行不再从主屏挪回来
+                        p.screen.leftAgentScreen(t.packageName)
+                        gate?.onTaskMovedAway(ConfirmationNotifier.appLabel(service, t.packageName))
                         publish(_state.value) // 立即显示暂停,不等下一个改动屏幕的工具
                     }
                 }
@@ -1014,7 +1026,7 @@ class TaskRun(
         // 循环自己报的终态不往外发:终态只由 [end] 在记好运行编号之后写,否则界面先收到结束、拿不到编号
         if (!TaskService.loopMayPublish(state)) return
         val shown = when {
-            state is TaskState.Running && gate?.movedAwayPending == true -> TaskState.Held(TaskGate.paused(TaskGate.MOVED_AWAY))
+            state is TaskState.Running && gate?.movedAwayPending == true -> TaskState.Held(TaskGate.paused(gate?.movedAwayReason ?: TaskGate.MOVED_AWAY))
             // 用户在借出的页面上操作:到关卡之前也先显示暂停
             state is TaskState.Running && gate?.userOnPagePending == true -> TaskState.Held(TaskGate.paused(TaskGate.USER_ON_PAGE))
             else -> state
@@ -1048,6 +1060,8 @@ class TaskRun(
         const val WEB_FRAME_MS = 500L
         const val SHELL_WAIT_MS = 15_000L
         const val DISPLAY_RETRY_MS = 1_000L
+        /** 多久看一次 Mika 屏上有没有不该在这里的 App。 */
+        const val INTRUDER_POLL_MS = 1_000L
         val WAITING_DISPLAY: String get() = tr(R.string.task_waiting_display)
         const val A11Y_WAIT_MS = 5_000L
         val NO_PHONE_HELPER: String get() = tr(R.string.task_no_phone_helper)

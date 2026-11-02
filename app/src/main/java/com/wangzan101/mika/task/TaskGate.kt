@@ -30,10 +30,18 @@ class TaskGate(
     /** 发现被挪走那一刻的点击计数:之后点的「继续」都算数,哪怕 Agent 还没走到 gate。 */
     @Volatile private var resumesAtMove = 0
 
-    fun onTaskMovedAway() {
+    /** 被用户挪到主屏的那个 App 的名字(暂停的那句里说出来);读不到为 null。 */
+    @Volatile private var movedAwayApp: String? = null
+
+    /** [app]:被挪走的那个 App 的名字,暂停时告诉用户是哪个;读不到传 null。 */
+    fun onTaskMovedAway(app: String? = null) {
         if (!movedAway.value) resumesAtMove = resumes.value
+        movedAwayApp = app
         movedAway.value = true
     }
+
+    /** 被挪走时暂停的那句(说出是哪个 App)。 */
+    val movedAwayReason: String get() = movedAwayCopy(movedAwayApp)
 
     /** 已发现被挪走、还没挪回:任务服务据此立即显示暂停,不必等到下一个改动屏幕的工具。 */
     val movedAwayPending: Boolean get() = movedAway.value
@@ -65,7 +73,7 @@ class TaskGate(
                     pauseUntilResume(SHELL_DOWN, setWaiting)
                 }
                 onPhone && movedAway.value -> {
-                    pauseUntilResume(MOVED_AWAY, setWaiting, seen = resumesAtMove)
+                    pauseUntilResume(movedAwayReason, setWaiting, seen = resumesAtMove)
                     while (shellAvailable.value && !moveBack()) pauseUntilResume(MOVE_BACK_FAILED, setWaiting)
                     if (shellAvailable.value) movedAway.value = false
                 }
@@ -111,6 +119,9 @@ class TaskGate(
         fun finishCopy(app: String?) = app?.let { tr(R.string.gate_finish_app, it) } ?: tr(R.string.gate_finish_unknown)
 
         val MOVED_AWAY: String get() = tr(R.string.gate_moved_away)
+
+        /** 用户在自己屏上打开了任务正用着的 [app](同一个 App 只能有一份在前台),Mika 停下时的那句;名字读不到时不说名字。 */
+        fun movedAwayCopy(app: String?) = app?.takeIf { it.isNotBlank() }?.let { tr(R.string.gate_moved_away_app, it) } ?: MOVED_AWAY
         val MOVE_BACK_FAILED: String get() = tr(R.string.gate_move_back_failed)
         val SHELL_DOWN: String get() = tr(R.string.gate_shell_down)
         /** 用户在浏览器页上亲手操作借给任务的页面时暂停的原因(界面据此认出这种暂停)。 */
