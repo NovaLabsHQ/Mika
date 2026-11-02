@@ -47,14 +47,15 @@ jobs:
         run: |
           set -euo pipefail
           # Accept licenses again so sdkmanager cannot stop on a prompt.
-          # `yes` is closed with SIGPIPE (141) once sdkmanager exits; that is fine.
-          set +e
+          # GNU yes exits 1 after sdkmanager closes the pipe ("Broken pipe").
+          # Judge the sdkmanager status, not yes.
+          set +o pipefail
           yes | sdkmanager --licenses
-          status=$?
-          set -e
-          if [[ "$status" -ne 0 && "$status" -ne 141 ]]; then
-            echo "sdkmanager --licenses failed with exit ${status}" >&2
-            exit "$status"
+          license_status=${PIPESTATUS[1]}
+          set -o pipefail
+          if [[ "$license_status" -ne 0 ]]; then
+            echo "sdkmanager --licenses failed with exit ${license_status}" >&2
+            exit "$license_status"
           fi
           sdkmanager --install "platforms;android-36" "build-tools;34.0.0"
           sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
