@@ -41,6 +41,7 @@ import com.wangzan101.mika.core.run.DeliveryState
 import com.wangzan101.mika.core.run.RunId
 import com.wangzan101.mika.core.run.SendOutcome
 import com.wangzan101.mika.core.run.ChannelInteraction
+import com.wangzan101.mika.core.run.Interaction
 import com.wangzan101.mika.core.run.RunProvenance
 import com.wangzan101.mika.core.run.RunOrigin
 import com.wangzan101.mika.core.run.Attendance
@@ -134,8 +135,11 @@ class TaskService : Service() {
         if (center.deferOrStart(threadId, text)) start(this, text, threadId, queue = true)
     }
 
-    internal fun interaction(threadId: String) = ChannelInteraction(outbox, localChannel,
-        ChannelPeer(LocalChannel.ID, "phone-owner", threadId))
+    internal fun interaction(threadId: String, boardId: String? = null): Interaction {
+        val local = ChannelInteraction(outbox, localChannel, ChannelPeer(LocalChannel.ID, "phone-owner", threadId))
+        // 看板交来的任务:提问同时发到手机上和 issue 评论里,哪边答都行
+        return boardId?.let { (application as com.wangzan101.mika.MikaApp).board.interaction(it, local) } ?: local
+    }
 
     internal fun otherRunHasDisplay(run: TaskRun) = center.running().any { it !== run && it.displayId.value >= 0 }
     internal fun hasActiveRuns() = center.running().isNotEmpty()
@@ -175,6 +179,13 @@ class TaskService : Service() {
                 allowQueue = true, provenance = RunProvenance(RunOrigin.Mcp,
                     Attendance.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_ATTENDANCE) } ?: Attendance.Unattended),
                 mcpExternalId = intent.getStringExtra(EXTRA_MCP_ID))
+            // 看板(GitHub issues)交来的:任务里写了 unattended 就不追问;评论批准不了确认,只能在手机上点
+            ACTION_START_CHANNEL -> begin(intent.getStringExtra(EXTRA_GOAL).orEmpty(), null,
+                allowQueue = true, provenance = RunProvenance(RunOrigin.Channel,
+                    Attendance.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_ATTENDANCE) } ?: Attendance.Reachable),
+                boardExternalId = intent.getStringExtra(EXTRA_BOARD_ID))
+            ACTION_CANCEL_CHANNEL -> intent.getStringExtra(EXTRA_BOARD_ID)?.let { id -> center.runs().firstOrNull { it.boardExternalId == id } }
+                ?.let { r -> if (center.cancelIfQueued(r)) cancelQueued(r) else r.cancel() }
             ACTION_CANCEL_MCP -> intent.getStringExtra(EXTRA_MCP_ID)?.let { id -> center.runs().firstOrNull { it.mcpExternalId == id } }
                 ?.let { r -> if (center.cancelIfQueued(r)) cancelQueued(r) else r.cancel() }
             ACTION_CANCEL -> if (run != null && center.cancelIfQueued(run)) cancelQueued(run) else run?.cancel()
@@ -200,7 +211,8 @@ class TaskService : Service() {
 
     private fun begin(newGoal: String, requestedConversation: String?, allowQueue: Boolean = false,
         provenance: RunProvenance = RunProvenance(), triggerKey: String? = null,
-        triggerActionGoal: String? = null, triggerThreadId: String? = null, mcpExternalId: String? = null, messageId: String? = null) {
+        triggerActionGoal: String? = null, triggerThreadId: String? = null, mcpExternalId: String? = null, messageId: String? = null,
+        boardExternalId: String? = null) {
         parallel = FeatureFlags.get(this).speedFlags().parallelTasks
         // 同一对话里正在执行或排队的任务收到新原话时，交给它的 Inbox。
         requestedConversation?.let(center::byConversation)?.let { existing ->
@@ -229,7 +241,7 @@ class TaskService : Service() {
         val store = ConversationStore.shared(this)
         val conversationId = requestedConversation ?: store.newConversation()
         // 定时和电脑交来的任务不丢:这个对话还有任务时排在它后面
-        val queueHere = provenance.origin == RunOrigin.Trigger || provenance.origin == RunOrigin.Mcp
+        val queueHere = provenance.origin == RunOrigin.Trigger || provenance.origin == RunOrigin.Mcp || provenance.origin == RunOrigin.Channel
         when (val r = center.tryStart(conversationId, newGoal, queueInConversation = queueHere)) {
             StartResult.AlreadyRunningInConversation -> keepForeground()
             is StartResult.Queued -> {
@@ -242,6 +254,7 @@ class TaskService : Service() {
                     center.store.save(it.copy(triggerWindowKey = triggerKey))
                 }
                 r.run.mcpExternalId = mcpExternalId
+                r.run.boardExternalId = boardExternalId
                 taskState._busy.value = true
                 taskState._conversationId.value = conversationId
                 // 先登记再显示:界面收到它的状态时,任务列表里已经有它(对话、原话)
@@ -265,6 +278,7 @@ class TaskService : Service() {
                     center.store.save(it.copy(triggerWindowKey = triggerKey))
                 }
                 run.mcpExternalId = mcpExternalId
+                run.boardExternalId = boardExternalId
                 // 先登记再显示:界面收到它的状态时,任务列表里已经有它(对话、原话)
                 publishRuns()
                 run.show()
@@ -370,6 +384,7 @@ class TaskService : Service() {
             }.onFailure { Log.w(TAG, "result notification failed", it) }
             if (delivered) center.markDelivered(run)
             run.mcpExternalId?.let { (application as com.wangzan101.mika.MikaApp).remoteTasks.ended(it, end) }
+            run.boardExternalId?.let { (application as com.wangzan101.mika.MikaApp).board.ended(it, end, run.runId.value) }
             onRunEnded(run, store)
         }
     }
@@ -434,6 +449,7 @@ class TaskService : Service() {
         run.end(TaskState.Cancelled)
         recordTurn(ConversationStore.shared(this), run.conversationId, run.goal, TaskState.Cancelled, null)
         run.mcpExternalId?.let { (application as com.wangzan101.mika.MikaApp).remoteTasks.ended(it, TaskState.Cancelled) }
+        run.boardExternalId?.let { (application as com.wangzan101.mika.MikaApp).board.ended(it, TaskState.Cancelled, null) }
         publishRuns()
         center.queued().forEachIndexed { i, q -> q.queue(i + 1) }
     }
@@ -663,6 +679,7 @@ class TaskService : Service() {
             center.store.interruptUnfinished()
             val app = application as com.wangzan101.mika.MikaApp
             center.runs().forEach { r -> r.mcpExternalId?.let { app.remoteTasks.ended(it, TaskState.Failed(tr(R.string.task_interrupted), FailKind.Environment)) } }
+            center.runs().forEach { r -> r.boardExternalId?.let { app.board.ended(it, TaskState.Failed(tr(R.string.task_interrupted), FailKind.Environment), r.runId.value) } }
             (application as com.wangzan101.mika.MikaApp).runRecovery.settleInterrupted()
             taskState._state.value = TaskState.Failed(tr(R.string.task_interrupted), FailKind.Environment)
             taskState._runs.value = emptyList()
@@ -723,6 +740,8 @@ class TaskService : Service() {
         const val ACTION_START_TRIGGER = "com.wangzan101.mika.task.START_TRIGGER"
         const val ACTION_START_MCP = "com.wangzan101.mika.task.START_MCP"
         const val ACTION_CANCEL_MCP = "com.wangzan101.mika.task.CANCEL_MCP"
+        const val ACTION_START_CHANNEL = "com.wangzan101.mika.task.START_CHANNEL"
+        const val ACTION_CANCEL_CHANNEL = "com.wangzan101.mika.task.CANCEL_CHANNEL"
         const val ACTION_CANCEL = "com.wangzan101.mika.task.CANCEL"
         const val ACTION_RESUME = "com.wangzan101.mika.task.RESUME"
         const val ACTION_TAKE_OVER = "com.wangzan101.mika.task.TAKE_OVER"
@@ -744,6 +763,7 @@ class TaskService : Service() {
         private const val EXTRA_TRIGGER_ACTION = "trigger_action"
         private const val EXTRA_TRIGGER_THREAD = "trigger_thread"
         private const val EXTRA_MCP_ID = "mcp_id"
+        private const val EXTRA_BOARD_ID = "board_id"
         private const val EXTRA_ATTENDANCE = "attendance"
         private const val EXTRA_ANSWER = "answer"
         /** 通知按钮所属任务的编号([TaskRun.key])。 */
@@ -804,6 +824,19 @@ class TaskService : Service() {
             context.startForegroundService(Intent(context, TaskService::class.java).setAction(ACTION_START_MCP)
                 .putExtra(EXTRA_GOAL, goal).putExtra(EXTRA_CONVERSATION, conversation)
                 .putExtra(EXTRA_MCP_ID, externalId).putExtra(EXTRA_ATTENDANCE, attendance.name))
+        }
+
+        /** 看板交来的任务([com.wangzan101.mika.board.BoardRuntime]):每次新开一个对话,来源记成渠道、有人可回。 */
+        fun startChannel(context: Context, goal: String, boardId: String, attendance: Attendance = Attendance.Reachable) {
+            context.startForegroundService(Intent(context, TaskService::class.java).setAction(ACTION_START_CHANNEL)
+                .putExtra(EXTRA_GOAL, goal).putExtra(EXTRA_BOARD_ID, boardId).putExtra(EXTRA_ATTENDANCE, attendance.name))
+        }
+
+        fun cancelChannel(context: Context, boardId: String) {
+            val state = (context.applicationContext as com.wangzan101.mika.MikaApp).taskState
+            if (state.runs.value.none { it.boardExternalId == boardId }) return
+            context.startService(Intent(context, TaskService::class.java).setAction(ACTION_CANCEL_CHANNEL)
+                .putExtra(EXTRA_BOARD_ID, boardId))
         }
 
         fun cancelMcp(context: Context, externalId: String) {

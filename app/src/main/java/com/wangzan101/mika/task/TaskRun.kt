@@ -151,6 +151,8 @@ class TaskRun(
     internal var triggerActionGoal: String? = null
     internal var triggerThreadId: String? = null
     internal var mcpExternalId: String? = null
+    /** 看板交来的任务在 [com.wangzan101.mika.board.BoardRuntime] 里的运行编号。 */
+    internal var boardExternalId: String? = null
     internal val conditionCheck get() = triggerActionGoal != null
     @Volatile private var children: ChildAgentRunner? = null
     /** 自己的一份;显示中时同步写到服务对外的那份。[show] 时整份抄过去。 */
@@ -605,7 +607,7 @@ class TaskRun(
             val runSpec = RunSpec(RunId(key), goal, conversationId,
                 priorTurns,
                 provenance, if (conditionCheck) setOf("web", "sandbox") else null, readOnly = conditionCheck)
-            val runApproval = approvalControl.start(remote = provenance.origin == RunOrigin.Mcp).also { approval = it }
+            val runApproval = approvalControl.start(remote = provenance.origin == RunOrigin.Mcp || provenance.origin == RunOrigin.Channel).also { approval = it }
             val childRunner = if (provenance.origin == RunOrigin.Ui && web != null) ChildAgentRunner(
                 create = { childSpec ->
                     val childTools = toolDispatcher(phoneScreen, model.capabilities.vision,
@@ -670,7 +672,8 @@ class TaskRun(
                 },
                 maxSteps = env.evalHooks.maxSteps ?: AgentLoop.UNLIMITED_STEPS,
                 reviewFinalAnswer = false,
-                inputTimeoutMs = TaskService.INPUT_TIMEOUT_MS,
+                // 看板任务按 issue 里写的 ask_timeout_min 等回答
+                inputTimeoutMs = boardExternalId?.let { (service.application as MikaApp).board.askTimeoutMs(it) } ?: TaskService.INPUT_TIMEOUT_MS,
                 // 询问 / 自主:询问时只有花钱的一步先问(有确认关卡和 request_confirmation);自主时连付款也不问。
                 // 开工时询问、中途换成自主的,下一步起不再问;开工时自主的,换成询问留给下一个任务
                 confirmations = runApproval.gate(),
@@ -686,7 +689,7 @@ class TaskRun(
                 routes = if (speed.replay) RouteMatcher(light ?: model, routeStore, knowledge) else null,
                 skills = catalog,
                 memory = memory,
-                interaction = service.interaction(conversationId),
+                interaction = service.interaction(conversationId, boardExternalId),
                 profileSnapshot = profileSnapshot,
                 streamReplies = true,
                 userScreens = userScreens,
